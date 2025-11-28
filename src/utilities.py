@@ -14,7 +14,7 @@ def ricker_wavelet(t, f0):
         t0 : float
             Time shift applied.
     """
-    t0 = 0.1  # time shift [s]
+    t0 = 0.2  # time shift [s]
     tau = t - t0
     w = (1 - 2 * (np.pi * f0 * tau)**2) * np.exp(-(np.pi * f0 * tau)**2)
     return w, t0
@@ -81,4 +81,25 @@ def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
     # enforce principal branch (imag(kz) >= 0)
     kz = np.where(np.imag(kz) < 0, -kz, kz)
     return kz
+
+def find_critical_angles(layers, verbose=True):
+    """Find critical angles from layer 1 to all deeper layers and return the minimum."""
+    v1 = layers[0][1]
+    critical_angles = []
+    
+    for i in range(1, len(layers)):
+        v_target = layers[i][1]
+        if v1 < v_target:
+            theta_c_deg = np.degrees(np.arcsin(v1 / v_target))
+            critical_angles.append((i+1, v_target, theta_c_deg))
+            if verbose:
+                print(f"Layer 1 -> Layer {i+1}: {theta_c_deg:.2f}° (v={v_target:.1f} m/s)")
+    
+    min_angle = min(ca[2] for ca in critical_angles) if critical_angles else None
+    
+    if verbose and min_angle:
+        print(f"Minimum critical angle: {min_angle:.2f}°")
+    
+    return min_angle
+
 

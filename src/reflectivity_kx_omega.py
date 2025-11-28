@@ -12,7 +12,7 @@ except ImportError:
     _NUMBA_AVAILABLE = False
 
 # ----- NumPy version -----
-def _reflectivity_numpy(layers, omegas, kx_chunk, free_surface=False):
+def _reflectivity_numpy(layers, omegas, kx_chunk):
     """
     h, vp, rho: from `layers` (list of tuples) length L (top...bottom)
     omegas: (Nw,)
@@ -46,13 +46,6 @@ def _reflectivity_numpy(layers, omegas, kx_chunk, free_surface=False):
 
         kz_next = kz_cur
         Z_next = Z_cur
-    
-    if free_surface:
-        # reflection coefficient between air (Z_air) and top layer (Z_next)
-        Z_air = 1.225 * 343.0
-        r_surface = (Z_air - Z_next) / (Z_air + Z_next)   # equals -1 if Z_air == 0
-        # combine surface reflection with downward reflectivity R (no extra phase above surface)
-        R = (r_surface + R) / (1.0 + r_surface * R)
 
     return R
 
@@ -60,7 +53,7 @@ def _reflectivity_numpy(layers, omegas, kx_chunk, free_surface=False):
 if _NUMBA_AVAILABLE:
     from numba import njit
     @njit(parallel=True, fastmath=True)
-    def _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, free_surface=False):
+    def _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, zr, zs, free_surface):
         """
         h_arr, c_arr, rho_arr: 1D arrays of length L (top..bottom)
         omegas: (Nw,)
@@ -115,19 +108,26 @@ if _NUMBA_AVAILABLE:
                     kz_next = kz_cur
                     Z_next = Z_cur
 
-                if free_surface: # refelctivity map is now synthetized at z=0 !
-                    # Z_air = 1.225 * 343.0
-                    r_surf = -1.0 # or (Z_air - Z_next) / (Z_air + Z_next)
-                    phase = np.exp(1j * 2.0 * kz_next * h[0])
-                    denom = 1.0 - r_surf * R * phase
-                    R = r_surf + (R * phase) / denom
-
+                if free_surface:
+                    Rfs = -1. 
+                    # my reflector is at np.abs(2*h[0] - zr[:, None] - zs[None, :])
+                    # so dz for direct is dz = np.abs(zr[:, None] - zs[None, :]) right ?
+                    # and dx is dx = np.abs(xs[:, None] - xr[None, :])
+                    z_minus = np.abs(zr - zs)
+                    z_plus = np.abs(zr + zs)
+                    direct = np.exp(1j * kz_next * z_minus) # unit amplitude
+                    numerator = Rfs * np.exp(1j * kz_cur * z_plus)
+                    denom = 1.0 - R * Rfs * np.exp(1j * kz_cur * (2.0 * h[0]))
+                    R += (R + direct + numerator) / denom
+                    if denom == 0.0:
+                        denom += 1e-12 + 0j
+                    R -= direct
                 # store
                 R_chunk[i, j] = R
         return R_chunk
 
 # ----- interface -----
-def get_reflectivity_chunked(layers, omegas, kx_chunk, use_numba=False, free_surface=False):
+def get_reflectivity_chunked(layers, omegas, kx_chunk, use_numba=False):
     """
     Compute surface reflectivity matrix R(omega, kx_chunk).
     Parameters
@@ -149,10 +149,42 @@ def get_reflectivity_chunked(layers, omegas, kx_chunk, use_numba=False, free_sur
     if use_numba:
         # Call numba version (to be implemented)
         h, vp, rho = layers_to_arrays(layers)
-        return _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, free_surface=free_surface)
+        return _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk)
     else:
-        return _reflectivity_numpy(layers, omegas, kx_chunk, free_surface=free_surface)
+        return _reflectivity_numpy(layers, omegas, kx_chunk)
+
+def reflectivity(layers, omegas, thetas, zr, zs, mode="k0", use_numba=True, fs=False):
     
+    if use_numba and not _NUMBA_AVAILABLE:
+        print("Warning: Numba not installed, falling back to NumPy version.")
+        use_numba = False
+
+    # unpack layers
+    h, vp, rho = layers_to_arrays(layers)
+    vp_top = vp[0]  # top-layer velocity
+    # shapes
+    omegas = np.asarray(omegas)
+    thetas = np.asarray(thetas)
+    # compute kx(w,θ)
+    if mode == "k0":
+        # k0 = omega/vp_top
+        k0 = omegas[:, None] / vp_top
+        kx_chunk = k0 * np.sin(thetas)[None, :]
+    elif mode == "psi":
+        k0 = omegas[:, None] / vp_top
+        kx_chunk = k0 * np.cosh(thetas)[None, :]
+    else:
+        raise ValueError("mode must be 'k0' or 'psi'")
+    
+    # call reflectivity engine
+    if use_numba:
+        # Call numba version (to be implemented)
+        return _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, zr, zs, free_surface=fs)
+    else:
+        return _reflectivity_numpy(layers, omegas, kx_chunk).squeeze()
+    #R = _reflectivity_numpy(layers, omegas, kx_chunk)
+    #return R.squeeze()
+
 # Example usage
 if __name__ == "__main__":
     layers = [
@@ -177,10 +209,10 @@ if __name__ == "__main__":
     start = time.time()
     for i0 in range(0, Nkx, chunk):
         i1 = min(i0 + chunk, Nkx)
-        R[:, i0:i1] = get_reflectivity_chunked(layers, omegas, kx_grid[:, i0:i1], use_numba=use_numba, free_surface=False)
+        R[:, i0:i1] = get_reflectivity_chunked(layers, omegas, kx_grid[:, i0:i1], use_numba=use_numba)
     end = time.time()
     print(f"Reflectivity computed in {end - start:.2f} seconds.")
-
+    
     plt.figure(figsize=(6,5))
     plt.imshow(np.abs(R), origin='lower',
                extent=[kx_vals[0], kx_vals[-1], freqs[0], freqs[-1]],

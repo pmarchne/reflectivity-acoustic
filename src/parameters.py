@@ -23,4 +23,5 @@ class Parameters:
         self.nfft = nfft
         self.freq = freq
         self.time = np.linspace(0.0, total_time, nt)
+        self.total_time = total_time
         self.dt = self.time[1] - self.time[0]

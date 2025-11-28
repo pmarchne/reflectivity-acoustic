@@ -1,4 +1,3 @@
-
 import sys
 import os
 
@@ -11,6 +10,7 @@ from layers import layers_to_arrays
 from numpy.polynomial.chebyshev import chebgauss
 from numpy.polynomial.legendre import leggauss
 from numba import njit, prange
+from scipy.special import y0, j0
 
 
 def integral_kx_quadrature_numba(
@@ -19,7 +19,7 @@ def integral_kx_quadrature_numba(
     xs, zs, xr, zr,
     n_prop,
     n_evan,
-    kx_max_factor=2.0,
+    kx_max_factor=4.0,
     chunk=256,
     fs=False
 ):
@@ -30,7 +30,6 @@ def integral_kx_quadrature_numba(
     """
     # layers
     h, vp, rho = layers_to_arrays(layers)
-
     # ---- Acquisition geometry ----
     xs = np.asarray(xs).ravel()
     zs = np.asarray(zs).ravel()
@@ -38,9 +37,14 @@ def integral_kx_quadrature_numba(
     zr = np.asarray(zr).ravel()
     Ns, Nr = xs.size, xr.size
     r_mat = np.abs(xs[:, None] - xr[None, :])
-    dz_mat = np.abs(zs[:, None] - zr[None, :])
+
+    dz_mat = np.abs(2*h[0] - zr[:, None] - zs[None, :])
+    dz_mat_plus = np.abs(zr[:, None] + zs[None, :])
+    dz_mat_minus = np.abs(zr[:, None] - zs[None, :])
     r_vec = r_mat.ravel()
     dz_vec = dz_mat.ravel()
+    dz_plus = dz_mat_plus.ravel()
+    dz_minus = dz_mat_minus.ravel()
     Np = r_vec.size
 
     # omegas
@@ -63,11 +67,12 @@ def integral_kx_quadrature_numba(
     nodes_leg_scaled = (0.5 * (alpha - 1.0) * nodes_leg + 0.5 * (alpha + 1.0))
     w_leg_scaled = 0.5 * (alpha - 1.0) * weights_leg
 
-    k0 = omega_act / layers[0][1]  # (Nwa,)
+    k0 = omega_act / vp[0]  # (Nwa,)
     # accumulators: (Np, Nwa)
     acc_prop = np.zeros((Np, Nwa), dtype=np.complex128)
     acc_evan = np.zeros_like(acc_prop)
 
+    hd = h[0]
     # loop chunks for propagating (q = u_all)
     n_u = u_all.size
     for i0 in range(0, n_u, chunk):
@@ -81,9 +86,9 @@ def integral_kx_quadrature_numba(
         kz_chunk = (k0[:, None] * np.sqrt(np.clip(1.0 - u_chunk[None, :]**2, 0.0, None)))
 
         # reflectivity (numba core): expects kx_chunk as complex (Nwa,chunk)
-        R_chunk = _reflectivity_numba_core(h, vp, rho, omega_act, kx_chunk, free_surface=fs)
+        R_chunk = _reflectivity_numba_core(h, vp, rho, omega_act, kx_chunk, 0., 0., False)
         # call propagating accumulator (in-place add)
-        _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, acc_prop)
+        _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, hd, acc_prop, free_surface=fs)#, fs, zs, zr)
 
     # loop chunks for evanescent (q in [1,alpha])
     n_leg = nodes_leg_scaled.size
@@ -93,14 +98,13 @@ def integral_kx_quadrature_numba(
         w_chunk = w_leg_scaled[i0:i1]
 
         kx_chunk = (k0[:, None] * q_chunk[None, :])
-        sqrt_term = np.sqrt(np.clip(q_chunk[None, :]**2 - 1.0, 0.0, None))
-        kz_chunk = (1j * k0[:, None] * sqrt_term)
+        kz_chunk = (1j * k0[:, None] * np.sqrt(np.clip(q_chunk[None, :]**2 - 1., 0.0, None)))
 
-        R_chunk = _reflectivity_numba_core(h, vp, rho, omega_act, kx_chunk, free_surface=fs)
+        R_chunk = _reflectivity_numba_core(h, vp, rho, omega_act, kx_chunk, 0., 0., False)
         # pass jacobian as vector of ones if weights already scaled
-        _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, acc_evan, k0)
+        _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, hd, acc_evan, k0, free_surface=fs)
 
-    acc_total = acc_prop + acc_evan   # (Np, Nwa)
+    acc_total = acc_prop + acc_evan 
     acc_total *= -1j / (2.0 * np.pi)
     # reconstruct full omega size with zeros for omega==0
     res_flat = np.zeros((Np, omega.size), dtype=np.complex128)
@@ -111,7 +115,7 @@ def integral_kx_quadrature_numba(
 
 # ---------- Numba accumulator for propagating part ----------
 @njit(parallel=True, fastmath=True)
-def _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, out_acc):
+def _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, h, out_acc, free_surface):
     """
     Accumulate propagating integral for one chunk.
     k0: (Nwa,) real
@@ -127,6 +131,8 @@ def _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_v
     for p in prange(Np):
         r = r_vec[p]
         dz = dz_vec[p]
+        dzp = dz_plus[p]
+        dzm = dz_minus[p]
         for iw in range(Nwa):
             acc = 0.0 + 0.0j
             # local references (faster)
@@ -137,14 +143,22 @@ def _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_v
                 kx = kx_row[j]
                 kz = kz_row[j]
                 Rv = R_row[j]
+                    
                 # compute integrand: exp(i kz dz) * cos(kx*r) * R
-                val = np.exp(1j * kz * dz) * np.cos(kx * r) * Rv #* np.exp(1j * kz * (dz))
-                acc += val * w_chunk[j]
+                term_direct = np.exp(1j * kz * dzm) * np.cos(kx * r)
+                val = np.exp(1j * kz * dz) * np.cos(kx * r) * Rv + term_direct
+                
+                if free_surface:
+                    Rfs = -1.0  # pressure release boundary
+                    val = val + np.exp(1j * kz * dzp) * np.cos(kx * r) * Rfs
+                    val = val / (1.0 - Rfs * Rv * np.exp(1j * 2.0 * kz * h))
+                val -= term_direct
+                acc += (val) * w_chunk[j]
             out_acc[p, iw] += acc #/ k0[iw]
 
 # ---------- Numba accumulator for evanescent part ----------
 @njit(parallel=True, fastmath=True)
-def _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, out_acc, jacobian_freq):
+def _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, h, out_acc, jacobian_freq, free_surface):
     """
     Accumulate evanescent integral for one chunk.
     jacobian_chunk: (chunk,) real factor associated to each kx sample (may include k0 factor if needed)
@@ -157,6 +171,8 @@ def _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_v
     for p in prange(Np):
         r = r_vec[p]
         dz = dz_vec[p]
+        dzp = dz_plus[p]
+        dzm = dz_minus[p]
         for iw in range(Nwa):
             acc = 0.0 + 0.0j
             kx_row = kx_chunk[iw]
@@ -166,55 +182,69 @@ def _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_v
                 kx = kx_row[j]
                 kz = kz_row[j]
                 Rv = R_row[j]
-                val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(kx * r) * Rv
-                acc += val * w_chunk[j]
+
+                term_direct = (1.0 / kz) * np.exp(1j * kz * dzm) * np.cos(kx * r)
+                val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(kx * r) * Rv + term_direct
+
+                if free_surface:
+                    Rfs = -1.0  # pressure release boundary
+                    val = val + np.exp(1j * kz * dzp) * np.cos(kx * r) * Rfs * (1.0 / kz)
+                    val = val / (1.0 - Rfs * Rv * np.exp(1j * 2.0 * kz * h))
+                val -= term_direct
+                acc += (val) * w_chunk[j]
+
+               # val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(kx * r) * Rv
+               # acc += val * w_chunk[j]
+                
             out_acc[p, iw] += acc * jacobian_freq[iw]
-
-            
-''' attempt to include FS
-    h0: top interface depth
-    s_val = np.exp(1j * kz * (z_ref - zs_p))  # downgoing from source to interface
-    Pr_val = np.exp(1j * kz * (z_ref - zr_p))   # upgoing from interface to receiver
-    #Gd_val = np.exp(1j * kz * (zr_p - zs_p))            # direct vertical
-    T_val = Pr_val * Rv * Ps_val
-
-    T_ghost = 0.0 + 0.0j
-    R_fs = -1.0  # Pressure release boundary
-    Ps_fs = np.exp(1j * kz * zs_p)  # up to FS
-    Pr_fs = np.exp(1j * kz * zr_p)  # down from FS
-    T_ghost = Ps_fs * R_fs * Pr_fs
-    
-    Ps_fs_to_int = np.exp(1j * kz * (zs_p + h0))  # source→FS→interface
-    Pr_int_to_rcv = np.exp(1j * kz * (h0 - zr_p))  # interface→receiver
-    T_fs_reflected = Ps_fs_to_int * R_fs * Rv * Pr_int_to_rcv
-                     
-    Ps_to_int = np.exp(1j * kz * (h0 - zs_p))  # source→interface
-    Pr_fs_to_rcv = np.exp(1j * kz * (h0 + zr_p))  # interface→FS→receiver
-    T_reflected_fs = Ps_to_int * Rv * R_fs * Pr_fs_to_rcv
-                    
-    T_ghost += T_fs_reflected + T_reflected_fs
-'''
     
 if __name__ == "__main__":
-    layers = [
-        (100.0, 1500.0, 1800.0),
-        (250.0, 1900.0, 2000.0),
-        (350.0, 1700.0, 2200.0),
-        (500.0, 2000.0, 2400.0),
-    ]
+    #layers = [
+    #    (100.0, 1500.0, 1800.0),
+    #    (250.0, 1900.0, 2000.0),
+    #    (350.0, 1700.0, 2200.0),
+    #    (500.0, 2000.0, 2400.0),
+    #]
 
-    xs = 20.
-    zs = 0.
-    xr = 100.
-    zr = 0.
-    n_prop = 1024
-    n_evan = 512
-
+    import time
+    import matplotlib.pyplot as plt
+    from utilities import green2d
+    vp = 2000.
+    layers = [(100.0, vp, 1000.0)]
     freqs = np.linspace(0.1, 100.0, 1024)
     omega = 2.0 * np.pi * freqs
 
-    import time
-    start = time.time()
+    xs = 20.
+    zs = 0.
+    xr = 800.
+    zr = 0.
+    n_prop = 1024
+    n_evan = 64
+
+    start = time.time() # z_travel
+    G_quad = integral_kx_quadrature_numba(
+        layers, omega, xs, zs, xr, zr,
+        n_prop, n_evan, kx_max_factor=2.0, chunk=256, fs=False)
+    end = time.time()
+    print(f"kx quadrature elapsed: {end-start:.2f} s")
+    
+    Green = green2d(omega, vp, xr-xs) 
+
+    plt.figure()
+    plt.plot(omega, np.real(Green), 'r--')
+    plt.plot(omega, np.real(G_quad[0, 0, :]), 'b:')
+    plt.xlabel('omega')
+    plt.grid()
+    plt.show()
+
+    plt.figure()
+    plt.plot(omega, np.imag(Green), 'g--')
+    plt.plot(omega, np.imag(G_quad[0, 0, :]), 'b-.')
+    plt.xlabel('omega')
+    plt.grid()
+    plt.show()
+
+    '''start = time.time()
     res = integral_kx_quadrature_numba(layers, omega, xs, zs, xr, zr, n_prop, n_evan)
     end = time.time()
     print(f"kx quadrature elapsed: {end-start:.2f} s")
@@ -227,4 +257,4 @@ if __name__ == "__main__":
     start = time.time()
     res = integral_kx_quadrature_numba(layers, omega, xs, zs, xr, zr, n_prop, n_evan)
     end = time.time()
-    print(f"kx quadrature elapsed: {end-start:.2f} s")
+    print(f"kx quadrature elapsed: {end-start:.2f} s")'''
