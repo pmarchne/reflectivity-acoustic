@@ -13,6 +13,7 @@ except ImportError:
 
 # ----- NumPy version -----
 def _reflectivity_numpy(layers, omegas, kx_chunk):
+    start = time.time()
     """
     h, vp, rho: from `layers` (list of tuples) length L (top...bottom)
     omegas: (Nw,)
@@ -47,6 +48,8 @@ def _reflectivity_numpy(layers, omegas, kx_chunk):
         kz_next = kz_cur
         Z_next = Z_cur
 
+    end = time.time()
+    print(f"elapsed: {end-start:.2f} s")
     return R
 
 # ----- Optional Numba version -----
@@ -108,21 +111,28 @@ if _NUMBA_AVAILABLE:
                     kz_next = kz_cur
                     Z_next = Z_cur
 
+                
                 if free_surface:
-                    Rfs = -1. 
-                    # my reflector is at np.abs(2*h[0] - zr[:, None] - zs[None, :])
-                    # so dz for direct is dz = np.abs(zr[:, None] - zs[None, :]) right ?
-                    # and dx is dx = np.abs(xs[:, None] - xr[None, :])
-                    z_minus = np.abs(zr - zs)
-                    z_plus = np.abs(zr + zs)
-                    direct = np.exp(1j * kz_next * z_minus) # unit amplitude
-                    numerator = Rfs * np.exp(1j * kz_cur * z_plus)
-                    denom = 1.0 - R * Rfs * np.exp(1j * kz_cur * (2.0 * h[0]))
-                    R += (R + direct + numerator) / denom
-                    if denom == 0.0:
-                        denom += 1e-12 + 0j
-                    R -= direct
-                # store
+                    # distances
+                    z_minus = abs(zr - zs) # direct distance between r and s
+                    z_plus  = abs(zr + zs) # distance to image source -s
+                    # direct and image spectral factors (unit source amplitude)
+                    direct = np.exp(1j * kz_next * z_minus)
+                    image  = -np.exp(1j * kz_next * z_plus) # sign for pressure-release
+                    # spectral Green (source->receiver) including free surface (no stack multiple-bounce)
+                    G_sr = (direct + image)
+                    # incorporate stack reflectivity R 
+                    # geometric-sum using the round-trip factor
+                    roundtrip = R * (-1.0) * np.exp(1j * 2.0 * kz_next * h[0])
+                    denom = 1.0 - roundtrip
+                    if (abs(denom) == 0.0):
+                        denom = 1e-12 + 0j
+                    mult_factor = 1.0 / denom
+                    # final spectral reflectivity
+                    R_spec = R * mult_factor  
+                    R = R_spec * G_sr
+                    R -= direct  # remove direct wave if needed
+
                 R_chunk[i, j] = R
         return R_chunk
 
@@ -194,32 +204,44 @@ if __name__ == "__main__":
         (500.0, 2000.0, 2400.0),
     ]
 
-    freqs = np.linspace(0.1, 100.0, 200)
+    freqs = np.linspace(0.1, 100.0, 1024)
     omegas = 2.0 * np.pi * freqs
 
     kx_max = 0.5
-    Nkx = 2048
+    Nkx = 2048*8
     kx_vals = np.linspace(-kx_max, kx_max, Nkx)
     kx_grid = np.tile(kx_vals[None, :], (omegas.size, 1))
 
-    use_numba = True
-    chunk = 128
-    # For propagating
-    R = np.zeros((len(freqs),Nkx), dtype=np.complex128)
+    #use_numba = True
+    #chunk = 128
+
+    h, vp, rho = layers_to_arrays(layers)
+    R_numpy = _reflectivity_numpy(layers, omegas, kx_grid)
     start = time.time()
-    for i0 in range(0, Nkx, chunk):
-        i1 = min(i0 + chunk, Nkx)
-        R[:, i0:i1] = get_reflectivity_chunked(layers, omegas, kx_grid[:, i0:i1], use_numba=use_numba)
+    R_numba = _reflectivity_numba_core(h, vp, rho, omegas, kx_grid, 70., 80., free_surface=False)
     end = time.time()
-    print(f"Reflectivity computed in {end - start:.2f} seconds.")
+    print(f"elapsed: {end-start:.2f} s")
+
+    start = time.time()
+    R_numba = _reflectivity_numba_core(h, vp, rho, omegas, kx_grid, 70., 80., free_surface=False)
+    end = time.time()
+    print(f"elapsed: {end-start:.2f} s")
+    # For propagating
+    #R = np.zeros((len(freqs),Nkx), dtype=np.complex128)
+    #start = time.time()
+    #for i0 in range(0, Nkx, chunk):
+    #    i1 = min(i0 + chunk, Nkx)
+    #    R[:, i0:i1] = get_reflectivity_chunked(layers, omegas, kx_grid[:, i0:i1], use_numba=use_numba)
+    #end = time.time()
+    #print(f"Reflectivity computed in {end - start:.2f} seconds.")
     
-    plt.figure(figsize=(6,5))
-    plt.imshow(np.abs(R), origin='lower',
-               extent=[kx_vals[0], kx_vals[-1], freqs[0], freqs[-1]],
-               aspect='auto')
-    plt.xlabel('kx (rad/m)')
-    plt.ylabel('frequency (Hz)')
-    plt.title('Reflectivity magnitude |R(omega,kx)|')
-    plt.colorbar(label='|R|')
-    plt.tight_layout()
-    plt.show()
+    #plt.figure(figsize=(6,5))
+    #plt.imshow(np.abs(R), origin='lower',
+    #           extent=[kx_vals[0], kx_vals[-1], freqs[0], freqs[-1]],
+    #           aspect='auto')
+    #plt.xlabel('kx (rad/m)')
+    #plt.ylabel('frequency (Hz)')
+    #plt.title('Reflectivity magnitude |R(omega,kx)|')
+    #plt.colorbar(label='|R|')
+    #plt.tight_layout()
+    #plt.show()

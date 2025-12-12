@@ -4,37 +4,29 @@ from scipy.special import hankel1
 def ricker_wavelet(t, f0):
     """
     Parameters:
-        t : float or np.ndarray
-            Time variable.
-        f0 : float
-            Characteristic frequency in Hz.
+        t : time variable [s].
+        f0 : central frequency [Hz].
     Returns:
-        w : np.ndarray
-            Wavelet values.
-        t0 : float
-            Time shift applied.
+        ricker : wavelet values.
+        t0 : wavelet time shift [s].
     """
-    t0 = 0.2  # time shift [s]
+    t0 = 0.2  # add a small positive time shift to enforce causality
     tau = t - t0
     w = (1 - 2 * (np.pi * f0 * tau)**2) * np.exp(-(np.pi * f0 * tau)**2)
     return w, t0
 
-def green2d(omega, c, r):
+def green2d(omega, vp, r):
     """
-    2D Green's function for a point source in homogeneous medium.
+    2D Green's function using the -i*omega*t time-harmonic convention.
     Parameters:
-        omega : float
-            Angular frequency (rad/s).
-        c : float
-            Wave speed.
-        r : float
-            Distance from the source.
+        omega : Angular frequency [rad/s].
+        vp : Wave speed [m/s].
+        r : distance from the source [m].
     Returns:
-        G : complex
-            Green's function value at distance r.
+        Green's function value at distance r.
     """
-    k = omega / c
-    return -(1j / 4) * hankel1(0, k * r)
+    k = omega / vp
+    return -(1j / 4) * hankel1(0, k * r) # cylindirical Hankel function of the first kind, order 0
 
 def green2d_flat(omegas, c, distances):
     """
@@ -82,8 +74,10 @@ def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
     kz = np.where(np.imag(kz) < 0, -kz, kz)
     return kz
 
-def find_critical_angles(layers, verbose=True):
-    """Find critical angles from layer 1 to all deeper layers and return the minimum."""
+def get_critical_angles(layers, verbose=True):
+    """
+    Get critical angles from layer 1 to all deeper layers and return the minimum.
+    """
     v1 = layers[0][1]
     critical_angles = []
     

@@ -84,7 +84,7 @@ def filon_moments(theta, n):
     mask0 = np.abs(theta) < 0.25 # mask0 = np.isclose(theta, 0.)
     # Small-theta closed forms (exact limits)
     # I0 = 2, I1 = 0, I2 = 2/3, I3 = 0, I4 = 2/5 ...
-    small_vals = np.array([2, 0, 2/3, 0, 2/5], dtype=np.complex128)
+    small_vals = np.array([2, 0, 2/3, 0, 2/5, 0, 2/7, 0], dtype=np.complex128)
     # Assign small-theta rows
     for j in range(min(n, len(small_vals))):
         out[mask0, j] = small_vals[j]
@@ -106,6 +106,12 @@ def filon_moments(theta, n):
             out[~mask0, 4] = (
                 2 * (t**4*s + 4*t**3*c - 12*t**2*s - 24*t*c + 24*s) / t**5
             )
+        if n >= 6:
+            out[~mask0, 5] = 2j * (-t**5*c + 5*t**4*s + 20*t**3*c - 60*t**2*s - 120*t*c + 120*s) / t**6
+        if n >= 7:
+            out[~mask0, 6] = 2 * (t**6*s + 6*t**5*c - 30*t**4*s - 120*t**3*c + 240*t**2*s + 720*t*c - 720*s) / t**7
+        if n >= 8:
+            out[~mask0, 7] = 2j * (-t**7*c + 7*t**6*s + 42*t**5*c - 210*t**4*s - 840*t**3*c + 1680*t**2*s + 5040*t*c - 5040*s) / t**8
     # Return scalar shape if input was scalar
     return out[0] if is_scalar else out
 
@@ -118,6 +124,9 @@ def precompute_Vinv(order):
         nodes = np.array([-1, -1/3, 1/3, 1], dtype=float)
     elif order == 'quartic':    # 5 points
         nodes = np.array([-1, -1/2, 0, 1/2, 1], dtype=float)
+    elif order == 'chebychev':
+        n = 6
+        nodes = np.cos((2*np.arange(n)+1) * np.pi / (2*n))
     else:
         raise ValueError("order must be 'quadratic', 'cubic', or 'quartic'")
 

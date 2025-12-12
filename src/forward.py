@@ -21,30 +21,32 @@ def forward(layers, acq: Acquisition, param: Parameters, free_surface=False, nq_
         d_cal: array (Ns, Nr, nt) of predicted time-domain traces
     """
     freqs = np.fft.rfftfreq(param.nfft, param.dt)
-    epsilon = 1.0 # complex frequency damping
+    print("first freq", freqs[0])
+    epsilon = 1. # complex frequency damping
     print("max epsilon =", np.log(50)/param.total_time)
-    omegas = 2.0 * np.pi * freqs + 1j * epsilon
+    omegas = 2.0 * np.pi * (freqs) + 1j * epsilon
     vp_top = layers[0][1]
 
     s_t, delay = ricker_wavelet(param.time, param.freq)
     s_t = s_t * np.exp(-epsilon * param.time)
     #print(f"Ricker wavelet initialized with delay: {delay} s")
     # ---- FFT in omega using the +i w t convention ----
-    s_w = np.conj(np.fft.rfft(np.conj(s_t), n=param.nfft)) 
+    s_w = np.conj(np.fft.rfft(s_t, n=param.nfft)) 
 
+    #traces_full = np.conj(np.fft.irfft(np.conj(Signal*s_w), n=param.nfft, axis=1))
     # ---- Acquisition geometry ----
     xs, zs, xr, zr = acq.xs, acq.zs, acq.xr, acq.zr
     Ns, Nr = xs.size, xr.size
 
     # ---- kx quadrature ----
-    kx_factor = 8.
+    kx_factor = 4.
     start = time.time() # z_travel
     R_map = Sommerfeld_integral(
         layers, omegas, xs, zs, xr, zr,
-        nq_prop, nq_evan, kx_max_factor=kx_factor)
+        nq_prop, nq_evan, kx_max_factor=kx_factor, free_surface=free_surface)
     #R_map = integral_kx_quadrature_numba(
     #    layers, omegas, xs, zs, xr, zr,
-    #    nq_prop, nq_evan, kx_max_factor=kx_factor, chunk=256, fs=free_surface)
+    #    nq_prop, nq_evan, kx_max_factor=kx_factor, chunk=128, fs=free_surface)
     end = time.time()
     print(f"kx quadrature elapsed: {end-start:.2f} s")
     # Multiply by hanning window
@@ -57,12 +59,15 @@ def forward(layers, acq: Acquisition, param: Parameters, free_surface=False, nq_
     distances_flat = travel_xy.ravel()
     G_flat = green2d_flat(omegas, vp_top, distances_flat)
 
-    taper_freq = np.hanning(2*Nw)[Nw:] 
+    #taper_freq = np.hanning(2*Nw)[Nw:] 
 
+    #np.savez("R_map.npz", R_map=R_map, omegas=omegas)
+    #T_flat = (R_flat+G_flat) * s_w[None, :] #* np.exp(-1j * delay * omegas)[None, :]
+    #T_flat = (np.real(G_flat)) * s_w[None, :]
     T_flat = (R_flat+G_flat) * s_w[None, :] * np.exp(-1j * delay * omegas)[None, :]
-    T_flat *= taper_freq[None, :]
-    #T_flat = (R_flat) * s_w[None, :] #* np.exp(-1j * delay * omegas)[None, :]
     # T_flat *= 1j*np.real(omegas) # ricker source time-derivative !
+
+    #T_flat *= taper_freq[None, :]
     # ---- Inverse FFT to time domain ----
     traces_full = np.conj(np.fft.irfft(np.conj(T_flat), n=param.nfft, axis=1))
     traces_cut = traces_full[:, :param.nt] * np.exp(epsilon * param.time)

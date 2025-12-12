@@ -22,6 +22,6 @@ class Parameters:
         self.nt = nt
         self.nfft = nfft
         self.freq = freq
-        self.time = np.linspace(0.0, total_time, nt)
         self.total_time = total_time
-        self.dt = self.time[1] - self.time[0]
+        self.dt = total_time / (nt-1)
+        self.time = np.arange(nt) * self.dt

@@ -23,7 +23,7 @@ def Sommerfeld_integral(
     omega,
     xs, zs, xr, zr,
     Ntheta, Nevan,
-    kx_max_factor=4.0
+    kx_max_factor=4.0, free_surface=False
 ):
     # layers
     h, vp, _ = layers_to_arrays(layers)
@@ -34,6 +34,7 @@ def Sommerfeld_integral(
     zr = np.asarray(zr).ravel()
     Ns, Nr = xs.size, xr.size
     dx_mat = np.abs(xs[:, None] - xr[None, :])
+    #dz_mat = np.abs(zs[:, None] - zr[None, :])
     dz_mat = np.abs(2*h[0] - zr[:, None] - zs[None, :])
     dx_vec = dx_mat.ravel()
     dz_vec = dz_mat.ravel()
@@ -47,7 +48,7 @@ def Sommerfeld_integral(
     acc_evan = np.zeros_like(acc_prop)
 
     thetas = np.linspace(-np.pi/2., np.pi/2., Ntheta)
-    order = 'quartic'
+    order = 'chebychev'
     theta_eval, subinterval, Vinv = precompute_quadrature_points(thetas, order)
     k0_vec = omegas / vp[0] 
 
@@ -57,12 +58,18 @@ def Sommerfeld_integral(
     scale_factor = psi_max / 2.0
     psi_i = scale_factor * (pts + 1.0)  # Map from [-1,1] to [0, psi_max]
 
+    start = time.time()
     taper = np.hanning(len(theta_eval))
     ZR, ZS = 76., 76.
-    Rmap = reflectivity(layers, omegas, theta_eval, ZR, ZS, mode="k0",  use_numba=True, fs=True) 
-    Rmap *= taper[None, :]
-    Rmap_evan = reflectivity(layers, omegas, psi_i, ZR, ZS, mode="psi",  use_numba=True, fs=True)
+    Rmap = reflectivity(layers, omegas, theta_eval, ZR, ZS, mode="k0",  use_numba=True, fs=free_surface) 
+    end = time.time()
+    print(f"reflectivity prop elapsed: {end-start:.2f} s")
+    start = time.time()
+    #Rmap *= taper[None, :]
+    Rmap_evan = reflectivity(layers, omegas, psi_i, ZR, ZS, mode="psi",  use_numba=True, fs=free_surface)
     taper_psi = np.hanning(len(psi_i)) 
+    end = time.time()
+    print(f"reflectivity evan elapsed: {end-start:.2f} s")
     #Rmap = np.ones((Nw, len(theta_eval))) 
     #Rmap_evan = np.ones((Nw, len(psi_i))) 
 
@@ -73,8 +80,13 @@ def Sommerfeld_integral(
         dz = dz_vec[p]
         dx = dx_vec[p]
         # acc prop of size (Np, Nw)
+        if (p==0 or p==3):
+            start = time.time()
         Weights = get_weights_filon(k0_vec, dz, dx, thetas, theta_eval, subinterval, Vinv) # shape (Nw, Nquad)
         acc_prop[p,:] = np.sum(Weights * Rmap, axis=1) # Rmap of size # (Nw, Nquad)
+        if (p==0 or p==3):
+            end = time.time()
+            print(f"quad prop elapsed: {end-start:.2f} s")
         #acc_prop[p,:] = np.einsum('ij,ij->i', Weights, Rmap)
         #for w in range(len(omegas)):
         #    k0 = omega[w] / vp[0]
@@ -84,12 +96,26 @@ def Sommerfeld_integral(
             #R_evan = Rmap_evan[w, :]
             #k0 = omega[w] / vp[0]
         # add the two parts of the integrals
+        if (p==0 or p==3):
+            start = time.time()
         phase_min = dz *np.sinh(psi_i[None, :] ) - 1j * dx *np.cosh(psi_i[None, :] )
         phase_plus = dz * np.sinh(psi_i[None, :] ) + 1j * dx *np.cosh(psi_i[None, :])
+
+        #phase_min = 1j * dx *np.sinh(psi_i[None, :] ) - dz * np.cosh(psi_i[None, :] )
+        #phase_plus = 1j * dx *np.sinh(psi_i[None, :] ) - dz * np.cosh(psi_i[None, :] )
+
         F_i = np.exp(-k0_vec[:, None] * phase_min)
         F_i_neg = np.exp(-k0_vec[:, None] * phase_plus)
-        integrand = (F_i + F_i_neg) * Rmap_evan * taper_psi[None, :]
+        integrand = (F_i + F_i_neg) * Rmap_evan #* taper_psi[None, :]
         acc_evan[p, :] = scale_factor * np.sum(weights_leg[None, :] * integrand, axis=1) 
+        if (p==0 or p==3):
+            end = time.time()
+            print(f"quad evanes elapsed: {end-start:.2f} s")
+
+#osc_x   = np.exp(1j * K0 * sinh_psi * dx)          # oscillation in x
+#decay_z = np.exp(-    K0 * cosh_psi * np.abs(dz))  # decay in z (real)
+#F_i = osc_x * decay_z
+#F_i_neg = np.conj(osc_x) * decay_z  # if you need symmetric contribution for -kx
         #acc_evan[p, :] = scale_factor * np.einsum('j,ij->i', weights_leg, integrand)
 
     I_total = -(acc_evan+1j*acc_prop) / (4.*np.pi)
