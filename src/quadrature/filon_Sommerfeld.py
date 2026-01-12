@@ -9,118 +9,97 @@ import time
 from reflectivity_kx_omega import reflectivity
 from layers import layers_to_arrays
 #from src.quadrature.filon import composite_filon, precompute_quadrature_points
-from quadrature.filon import composite_filon, precompute_quadrature_points, get_weights_filon
+from quadrature.filon import precompute_quadrature_points, get_weights_filon
 from acquisition import Acquisition
 from utilities import green2d
+from fortran.reflectivity_benchmark import fortran_reflectivity
 from scipy.special import roots_legendre
 
 def integrand_evan_cosh(psi, k0, z_abs, x):
     phase = z_abs *np.sinh(psi) - 1j * x *np.cosh(psi)
     return np.exp(-k0*phase)
 
+def get_integrand_evan_param(kx_max_factor, nevan):
+    psi_max = np.arccosh(kx_max_factor)
+    # Gauss-Legendre quadrature points in [0, psi_max]
+    pts, weights_leg = roots_legendre(nevan)
+    scale_factor = psi_max / 2.0
+    psi_i = scale_factor * (pts + 1.0)  # Map from [-1,1] to [0, psi_max]
+    sinh_psi = np.sinh(psi_i[None, :])
+    cosh_psi = np.cosh(psi_i[None, :])
+    return sinh_psi, cosh_psi, psi_i, weights_leg, scale_factor
+
+def build_node_map(subinterval_map, Nquad):
+    """
+    Global node -> list of (interval_id, local_node_id)
+    """
+    node_map = [[] for _ in range(Nquad)]
+    for i, (start, end) in enumerate(subinterval_map):
+        for j in range(end - start):
+            node_map[start + j].append((i, j))
+    return node_map
+
 def Sommerfeld_integral(
     layers,
     omega,
-    xs, zs, xr, zr,
-    Ntheta, Nevan,
+    acq: Acquisition,
+    Ntheta, Nevan=64,
     kx_max_factor=4.0, free_surface=False
 ):
     # layers
     h, vp, _ = layers_to_arrays(layers)
+    # omegas
+    Nw = omega.size
+    k0_vec = omega / vp[0] 
     # ---- Acquisition geometry ----
-    xs = np.asarray(xs).ravel()
-    zs = np.asarray(zs).ravel()
-    xr = np.asarray(xr).ravel()
-    zr = np.asarray(zr).ravel()
-    Ns, Nr = xs.size, xr.size
-    dx_mat = np.abs(xs[:, None] - xr[None, :])
-    #dz_mat = np.abs(zs[:, None] - zr[None, :])
-    dz_mat = np.abs(2*h[0] - zr[:, None] - zs[None, :])
-    dx_vec = dx_mat.ravel()
-    dz_vec = dz_mat.ravel()
+    Ns, Nr = acq.xs.size, acq.xr.size
+
+    dx_vec = np.abs(acq.xs[:, None] - acq.xr[None, :]).ravel()
+    # dz_mat = np.abs(zs[:, None] - zr[None, :])
+    dz_vec = np.abs(2*h[0] - acq.zr[:, None] - acq.zs[None, :]).ravel()
     Np = dx_vec.size
 
-    # omegas
-    omegas = np.atleast_1d(omega)
-    Nw = omegas.size
     # accumulators: (Np, Nwa)
     acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
     acc_evan = np.zeros_like(acc_prop)
 
     thetas = np.linspace(-np.pi/2., np.pi/2., Ntheta)
-    order = 'chebychev'
-    theta_eval, subinterval, Vinv = precompute_quadrature_points(thetas, order)
-    k0_vec = omegas / vp[0] 
-
-    psi_max = np.arccosh(kx_max_factor)
-    # Get Gauss-Legendre quadrature points in [0, psi_max]
-    pts, weights_leg = roots_legendre(Nevan)
-    scale_factor = psi_max / 2.0
-    psi_i = scale_factor * (pts + 1.0)  # Map from [-1,1] to [0, psi_max]
+    theta_eval, subinterval, Vinv = precompute_quadrature_points(thetas, 'chebychev')
+    node_map = build_node_map(subinterval, len(theta_eval))
 
     start = time.time()
-    taper = np.hanning(len(theta_eval))
-    ZR, ZS = 76., 76.
-    Rmap = reflectivity(layers, omegas, theta_eval, ZR, ZS, mode="k0",  use_numba=True, fs=free_surface) 
+    p = np.sin(theta_eval) / vp[0]
+    start = time.time()
+    rmap = fortran_reflectivity(layers, omega, p, free_surface=1, zr=76., zs=76.)
+    print('ntheta quadrature = ', theta_eval.shape)
     end = time.time()
     print(f"reflectivity prop elapsed: {end-start:.2f} s")
-    start = time.time()
-    #Rmap *= taper[None, :]
-    Rmap_evan = reflectivity(layers, omegas, psi_i, ZR, ZS, mode="psi",  use_numba=True, fs=free_surface)
-    taper_psi = np.hanning(len(psi_i)) 
-    end = time.time()
-    print(f"reflectivity evan elapsed: {end-start:.2f} s")
-    #Rmap = np.ones((Nw, len(theta_eval))) 
-    #Rmap_evan = np.ones((Nw, len(psi_i))) 
 
-    # ---- Main loop (to be parallelized over p and w) ----
-    acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
-    acc_evan = np.zeros((Np, Nw), dtype=np.complex128)
+    sinh_psi, cosh_psi, psi_i, weights_ev, scaling = get_integrand_evan_param(kx_max_factor, Nevan)
+
+    ph = np.cosh(psi_i) / vp[0]
+    rmap_evan = fortran_reflectivity(layers, omega, ph, free_surface=1, zr=76., zs=76.)
+
+    # Main loop over source-receiver pairs
     for p in range(Np):
+        # get geometry
         dz = dz_vec[p]
         dx = dx_vec[p]
-        # acc prop of size (Np, Nw)
-        if (p==0 or p==3):
-            start = time.time()
-        Weights = get_weights_filon(k0_vec, dz, dx, thetas, theta_eval, subinterval, Vinv) # shape (Nw, Nquad)
-        acc_prop[p,:] = np.sum(Weights * Rmap, axis=1) # Rmap of size # (Nw, Nquad)
-        if (p==0 or p==3):
-            end = time.time()
-            print(f"quad prop elapsed: {end-start:.2f} s")
-        #acc_prop[p,:] = np.einsum('ij,ij->i', Weights, Rmap)
-        #for w in range(len(omegas)):
-        #    k0 = omega[w] / vp[0]
-        #    R_w = Rmap[w, :]
-        #    acc_prop[p, w] = composite_filon(thetas, k0, dz, dx, R_w, subinterval, Vinv)
-        #for w in range(len(omegas)):
-            #R_evan = Rmap_evan[w, :]
-            #k0 = omega[w] / vp[0]
-        # add the two parts of the integrals
-        if (p==0 or p==3):
-            start = time.time()
-        phase_min = dz *np.sinh(psi_i[None, :] ) - 1j * dx *np.cosh(psi_i[None, :] )
-        phase_plus = dz * np.sinh(psi_i[None, :] ) + 1j * dx *np.cosh(psi_i[None, :])
+        # propagating part, integral of size (Np, Nw)
+        weights_prop = get_weights_filon(k0_vec, dz, dx, thetas, theta_eval, Vinv, node_map) # shape (Nw, Nquad)
+        acc_prop[p, :] = np.sum(weights_prop * rmap, axis=1) # Rmap of size # (Nw, Nquad)
+        
+        # evanescent part
+        phase_min = dz * sinh_psi - 1j * dx * cosh_psi
+        phase_plus = dz * sinh_psi + 1j * dx * cosh_psi
+        F_i, F_i_neg = np.exp(-k0_vec[:, None] * phase_min), np.exp(-k0_vec[:, None] * phase_plus)
 
-        #phase_min = 1j * dx *np.sinh(psi_i[None, :] ) - dz * np.cosh(psi_i[None, :] )
-        #phase_plus = 1j * dx *np.sinh(psi_i[None, :] ) - dz * np.cosh(psi_i[None, :] )
-
-        F_i = np.exp(-k0_vec[:, None] * phase_min)
-        F_i_neg = np.exp(-k0_vec[:, None] * phase_plus)
-        integrand = (F_i + F_i_neg) * Rmap_evan #* taper_psi[None, :]
-        acc_evan[p, :] = scale_factor * np.sum(weights_leg[None, :] * integrand, axis=1) 
-        if (p==0 or p==3):
-            end = time.time()
-            print(f"quad evanes elapsed: {end-start:.2f} s")
-
-#osc_x   = np.exp(1j * K0 * sinh_psi * dx)          # oscillation in x
-#decay_z = np.exp(-    K0 * cosh_psi * np.abs(dz))  # decay in z (real)
-#F_i = osc_x * decay_z
-#F_i_neg = np.conj(osc_x) * decay_z  # if you need symmetric contribution for -kx
-        #acc_evan[p, :] = scale_factor * np.einsum('j,ij->i', weights_leg, integrand)
+        integrand = (F_i + F_i_neg) * rmap_evan
+        acc_evan[p, :] = scaling * np.sum(weights_ev[None, :] * integrand, axis=1)
 
     I_total = -(acc_evan+1j*acc_prop) / (4.*np.pi)
     res_pairs = I_total.reshape((Ns, Nr, Nw))
-    return res_pairs 
+    return res_pairs
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt

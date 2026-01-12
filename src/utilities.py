@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.special import hankel1
+from src.parameters import Parameters
 
 def ricker_wavelet(t, f0):
     """
@@ -12,21 +13,82 @@ def ricker_wavelet(t, f0):
     """
     t0 = 0.2  # add a small positive time shift to enforce causality
     tau = t - t0
-    w = (1 - 2 * (np.pi * f0 * tau)**2) * np.exp(-(np.pi * f0 * tau)**2)
-    return w, t0
+    ricker = (1 - 2 * (np.pi * f0 * tau)**2) * np.exp(-(np.pi * f0 * tau)**2)
+    return ricker, t0
 
-def green2d(omega, vp, r):
+def source_frequency(param: Parameters):
+    """
+    convert source from time to frequency domain
+    param: Parameters object
+    """
+    omegas = param.create_frequencies()
+    source_time, delay = ricker_wavelet(param.time, param.f0)
+    print(f"Ricker wavelet initialized with delay: {delay} s")
+    source_time *= np.exp(-param.epsilon * param.time) # apply damping in time domain 
+    # ---- FFT in omega using the +i w t convention ----
+    source_freq = np.conj(np.fft.rfft(source_time, n=param.nfft))
+
+    return source_freq, omegas, delay
+
+def inverse_fft_signal(signal_freq, param, windowing=None):
+    """
+    Inverse FFT to time domain using +i w t convention.
+    Parameters:
+        signal_freq : frequency domain signal (N_traces, N_w).
+    Returns:
+        signal_time : time domain signal (N_traces, N_time).
+    """
+    #taper_freq = np.hanning(2*Nw)[Nw:]
+    #T_flat *= taper_freq[None, :] 
+    traces = np.conj(np.fft.irfft(np.conj(signal_freq), n=param.nfft, axis=1))
+    traces_cut = traces[:, :param.nt] * np.exp(param.epsilon * param.time)
+    return traces_cut
+
+def low_freq_taper(omegas, omega_min):
+    """
+    Smoothly suppress frequencies below omega_min.
+    """
+    taper = np.ones_like(omegas)
+
+    mask = omegas < omega_min
+    taper[mask] = 0.5 * (1 - np.cos(np.pi * omegas[mask] / omega_min))
+
+    return taper
+
+def green2d(omegas, c, distances, eps=1e-10):
     """
     2D Green's function using the -i*omega*t time-harmonic convention.
-    Parameters:
-        omega : Angular frequency [rad/s].
-        vp : Wave speed [m/s].
-        r : distance from the source [m].
-    Returns:
-        Green's function value at distance r.
+    ----------
+    omegas : float or array-like
+        Angular frequency/frequencies [rad/s].
+    c : float
+        Wave speed [m/s].
+    distances : float or array-like
+        Source–receiver distance(s) [m].
+    eps : float, optional
+        Small value to prevent kr = 0 singularities.
+    Returns
+    -------
+    G : complex ndarray
+        Green's function.
+        Shape:
+        - scalar if omegas and distances are scalars
+        - (N_receivers, N_frequencies) otherwise
     """
-    k = omega / vp
-    return -(1j / 4) * hankel1(0, k * r) # cylindirical Hankel function of the first kind, order 0
+    omegas = np.atleast_1d(omegas)
+    r = np.atleast_1d(distances).astype(float)
+    # Prevent r = 0
+    r[r == 0] = eps
+    # Compute kr safely
+    k = omegas / c
+    kr = np.outer(k, r)
+    # Prevent kr = 0
+    kr = np.maximum(kr, eps)
+    G = -(1j / 4) * hankel1(0, kr)
+    # Return scalar if inputs were scalar
+    if G.size == 1:
+        return G.item()
+    return G.T  # (N_receivers, N_frequencies)
 
 def green2d_flat(omegas, c, distances):
     """

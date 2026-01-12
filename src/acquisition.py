@@ -8,19 +8,35 @@ class Acquisition:
 
     @property
     def xs(self):
-        return self.sources[:, 0] if len(self.sources) else np.array([])
+        return np.asarray(self.sources[:, 0]).ravel() if len(self.sources) else np.array([])
 
     @property
     def zs(self):
-        return self.sources[:, 1] if len(self.sources) else np.array([])
+        return np.asarray(self.sources[:, 1]).ravel() if len(self.sources) else np.array([])
 
     @property
     def xr(self):
-        return self.receivers[:, 0] if len(self.receivers) else np.array([])
+        return np.asarray(self.receivers[:, 0]).ravel() if len(self.receivers) else np.array([])
 
     @property
     def zr(self):
-        return self.receivers[:, 1] if len(self.receivers) else np.array([])
+        return np.asarray(self.receivers[:, 1]).ravel() if len(self.receivers) else np.array([])
+    
+    def get_distances(self):
+        """
+        Compute source-receiver distances from Acquisition object.
+        Parameters:
+            acq : Acquisition
+                Acquisition geometry with xs, zs, xr, zr attributes.
+        Returns:
+            distances : np.ndarray
+                Array of source-receiver distances.
+        """
+        xs, zs, xr, zr = self.xs, self.zs, self.xr, self.zr
+        dx_mat = np.abs(xs[:, None] - xr[None, :])
+        dz_mat = np.abs(zs[:, None] - zr[None, :])
+        distances = np.sqrt(dx_mat**2 + dz_mat**2)
+        return distances.ravel()
 
 
 if __name__ == "__main__":

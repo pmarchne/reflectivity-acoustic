@@ -6,14 +6,25 @@ import time
 import matplotlib.pyplot as plt
 
 try:
-    from numba import njit
+    from numba import njit, prange
     _NUMBA_AVAILABLE = True
 except ImportError:
     _NUMBA_AVAILABLE = False
 
+def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
+    omega = np.asarray(omega)  # shape (Nw,)
+    kx = np.asarray(kx_chunk)[None, :]  # shape (1, chunk)
+    k0 = omega[:, None] / c  # shape (Nw, 1)
+
+    kz2 = k0**2 - kx**2  # shape (Nw, chunk)
+    kz = np.sqrt(kz2 + 0j)  # principal branch
+
+    # enforce principal branch (imag(kz) >= 0)
+    kz = np.where(np.imag(kz) < 0, -kz, kz)
+    return kz
+
 # ----- NumPy version -----
-def _reflectivity_numpy(layers, omegas, kx_chunk):
-    start = time.time()
+def _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface):
     """
     h, vp, rho: from `layers` (list of tuples) length L (top...bottom)
     omegas: (Nw,)
@@ -47,9 +58,27 @@ def _reflectivity_numpy(layers, omegas, kx_chunk):
 
         kz_next = kz_cur
         Z_next = Z_cur
-
-    end = time.time()
-    print(f"elapsed: {end-start:.2f} s")
+    
+        if free_surface:
+            # distances
+            z_minus = abs(zr - zs) # direct distance between r and s
+            z_plus  = abs(zr + zs) # distance to image source -s
+            # direct and image spectral factors (unit source amplitude)
+            direct = np.exp(1j * kz_next * z_minus)
+            image  = -np.exp(1j * kz_next * z_plus) # sign for pressure-release
+            # spectral Green (source->receiver) including free surface (no stack multiple-bounce)
+            G_sr = (direct + image)
+            # incorporate stack reflectivity R 
+            # geometric-sum using the round-trip factor
+            roundtrip = R * (-1.0) * np.exp(1j * 2.0 * kz_next * h[0])
+            denom = 1.0 - roundtrip
+            if (abs(denom.any()) == 0.0):
+                denom = 1e-12 + 0j
+            mult_factor = 1.0 / denom
+            # final spectral reflectivity
+            R_spec = R * mult_factor  
+            R = R_spec * G_sr
+            R -= direct  # remove direct wave if needed
     return R
 
 # ----- Optional Numba version -----
@@ -136,33 +165,6 @@ if _NUMBA_AVAILABLE:
                 R_chunk[i, j] = R
         return R_chunk
 
-# ----- interface -----
-def get_reflectivity_chunked(layers, omegas, kx_chunk, use_numba=False):
-    """
-    Compute surface reflectivity matrix R(omega, kx_chunk).
-    Parameters
-    ----------
-    layers : list of (h, c, rho) tuples
-    omegas : array-like, shape (Nw,)
-    kx_chunck : array-like, shape (Nw, Nkx_chunck)
-    use_numba : bool
-        If True, attempt to use Numba version (requires Numba installed).
-
-    Returns
-    -------
-    R_out : np.ndarray, shape (Nw, Nkx_chunck)
-    """
-    if use_numba and not _NUMBA_AVAILABLE:
-        print("Warning: Numba not installed, falling back to NumPy version.")
-        use_numba = False
-
-    if use_numba:
-        # Call numba version (to be implemented)
-        h, vp, rho = layers_to_arrays(layers)
-        return _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk)
-    else:
-        return _reflectivity_numpy(layers, omegas, kx_chunk)
-
 def reflectivity(layers, omegas, thetas, zr, zs, mode="k0", use_numba=True, fs=False):
     
     if use_numba and not _NUMBA_AVAILABLE:
@@ -187,13 +189,16 @@ def reflectivity(layers, omegas, thetas, zr, zs, mode="k0", use_numba=True, fs=F
         raise ValueError("mode must be 'k0' or 'psi'")
     
     # call reflectivity engine
+    start = time.time()
     if use_numba:
         # Call numba version (to be implemented)
-        return _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, zr, zs, free_surface=fs)
+        R = _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, zr, zs, free_surface=fs)
     else:
-        return _reflectivity_numpy(layers, omegas, kx_chunk).squeeze()
+        R = _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface=fs).squeeze()
+    end = time.time()
+    print(f"elapsed: {end-start:.2f} s")
     #R = _reflectivity_numpy(layers, omegas, kx_chunk)
-    #return R.squeeze()
+    return R
 
 # Example usage
 if __name__ == "__main__":
@@ -226,22 +231,3 @@ if __name__ == "__main__":
     R_numba = _reflectivity_numba_core(h, vp, rho, omegas, kx_grid, 70., 80., free_surface=False)
     end = time.time()
     print(f"elapsed: {end-start:.2f} s")
-    # For propagating
-    #R = np.zeros((len(freqs),Nkx), dtype=np.complex128)
-    #start = time.time()
-    #for i0 in range(0, Nkx, chunk):
-    #    i1 = min(i0 + chunk, Nkx)
-    #    R[:, i0:i1] = get_reflectivity_chunked(layers, omegas, kx_grid[:, i0:i1], use_numba=use_numba)
-    #end = time.time()
-    #print(f"Reflectivity computed in {end - start:.2f} seconds.")
-    
-    #plt.figure(figsize=(6,5))
-    #plt.imshow(np.abs(R), origin='lower',
-    #           extent=[kx_vals[0], kx_vals[-1], freqs[0], freqs[-1]],
-    #           aspect='auto')
-    #plt.xlabel('kx (rad/m)')
-    #plt.ylabel('frequency (Hz)')
-    #plt.title('Reflectivity magnitude |R(omega,kx)|')
-    #plt.colorbar(label='|R|')
-    #plt.tight_layout()
-    #plt.show()

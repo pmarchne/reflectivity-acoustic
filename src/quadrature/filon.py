@@ -2,6 +2,8 @@ import numpy as np
 import os
 import sys
 
+import numba as nb
+
 # Add src folder to Python path if running from an outer directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _FILON_CACHE = {}
@@ -14,13 +16,11 @@ def g_prime(theta, z_abs, x):
     """Derivative g'(theta) = -|z|*sin(theta) + x*cos(theta)"""
     return -z_abs * np.sin(theta) + x * np.cos(theta)
 
-def filon_quad_core(a, b, k0, z, x, Rvals, Vinv):
+'''def filon_quad_core(a, b, k0, z, x, Rvals, Vinv):
     """
     Compute Filon integral over [a,b] using:
     - order in {'quadratic','cubic','quartic'}
     """
-    #
-
     h = (b - a)/2
     c = (a + b)/2
     theta_bar = (k0 * g_prime(c, z, x)) * h
@@ -38,7 +38,6 @@ def filon_quad_core(a, b, k0, z, x, Rvals, Vinv):
             beta = (2*(1 - cth))/tb**2
             gamma = 2*(s - tb*cth)/tb**3
             I = h*(alpha*(R_a + R_b) + beta*R_c) + 1j*h*(gamma*(R_b - R_a))
-
     else:
         # Compute complex weights: W = Vinv @ Im
         Im = filon_moments(theta_bar, n)
@@ -59,61 +58,58 @@ def composite_filon(thetas, k0, z, x, Rvals, subinterval_map, Vinv):
             a, b, k0, z, x, R_subinterval, Vinv
         )
         total_integral += subinterval_integral
-    return total_integral
+    return total_integral'''
 
 #   Closed-form oscillatory moments
+@nb.njit(parallel=True, fastmath=True)
 def filon_moments(theta, n):
-    """
-    Vectorized Filon moments:
-        Im_j(theta) = ∫_{-1}^1 t^j e^{i theta t} dt
-    Args:
-        theta : scalar or array (Nw,)
-        n     : number of moments
-    Returns:
-        Im : array of shape (Nw, n)
-    """
     theta = np.asarray(theta)
-    is_scalar = theta.ndim == 0
-    # Promote scalar to (1,)
-    if is_scalar:
-        theta = theta[None]
+    orig_shape = theta.shape
+    flat = theta.reshape(-1)
+    N = flat.size
 
-    N = theta.shape[0]
     out = np.zeros((N, n), dtype=np.complex128)
-    # Small-theta mask (heuristic)
-    mask0 = np.abs(theta) < 0.25 # mask0 = np.isclose(theta, 0.)
-    # Small-theta closed forms (exact limits)
-    # I0 = 2, I1 = 0, I2 = 2/3, I3 = 0, I4 = 2/5 ...
-    small_vals = np.array([2, 0, 2/3, 0, 2/5, 0, 2/7, 0], dtype=np.complex128)
-    # Assign small-theta rows
-    for j in range(min(n, len(small_vals))):
-        out[mask0, j] = small_vals[j]
 
-    # Non-small theta
-    if np.any(~mask0):
-        t = theta[~mask0]
+    for i in nb.prange(N):
+        t = flat[i]
+
+        if abs(t) < 0.25:
+            # Small-theta closed forms
+            small = (2.0, 0.0, 2/3, 0.0, 2/5, 0.0, 2/7, 0.0)
+            m = min(n, 8)
+            for k in range(m):
+                out[i, k] = small[k]
+            continue
+
         s = np.sin(t)
         c = np.cos(t)
 
-        out[~mask0, 0] = 2 * s / t
-        if n >= 2:
-            out[~mask0, 1] = 2j * (-t*c + s) / t**2
-        if n >= 3:
-            out[~mask0, 2] = 2 * (t**2 * s + 2*t*c - 2*s) / t**3
-        if n >= 4:
-            out[~mask0, 3] = 2j * (-t**3*c + 3*t**2*s + 6*t*c - 6*s) / t**4
-        if n >= 5:
-            out[~mask0, 4] = (
-                2 * (t**4*s + 4*t**3*c - 12*t**2*s - 24*t*c + 24*s) / t**5
+        t2 = t * t
+        t3 = t2 * t
+        t4 = t2 * t2
+        t5 = t4 * t
+        t6 = t3 * t3
+
+        if n > 0:
+            out[i, 0] = 2 * s / t
+        if n > 1:
+            out[i, 1] = 2j * (-t * c + s) / t2
+        if n > 2:
+            out[i, 2] = 2 * (t2 * s + 2 * t * c - 2 * s) / t3
+        if n > 3:
+            out[i, 3] = 2j * (-t3 * c + 3 * t2 * s + 6 * t * c - 6 * s) / t4
+        if n > 4:
+            out[i, 4] = (
+                2 * (t4 * s + 4 * t3 * c - 12 * t2 * s
+                     - 24 * t * c + 24 * s) / t5
             )
-        if n >= 6:
-            out[~mask0, 5] = 2j * (-t**5*c + 5*t**4*s + 20*t**3*c - 60*t**2*s - 120*t*c + 120*s) / t**6
-        if n >= 7:
-            out[~mask0, 6] = 2 * (t**6*s + 6*t**5*c - 30*t**4*s - 120*t**3*c + 240*t**2*s + 720*t*c - 720*s) / t**7
-        if n >= 8:
-            out[~mask0, 7] = 2j * (-t**7*c + 7*t**6*s + 42*t**5*c - 210*t**4*s - 840*t**3*c + 1680*t**2*s + 5040*t*c - 5040*s) / t**8
-    # Return scalar shape if input was scalar
-    return out[0] if is_scalar else out
+        if n > 5:
+            out[i, 5] = (
+                2j * (-t5 * c + 5 * t4 * s + 20 * t3 * c
+                      - 60 * t2 * s - 120 * t * c + 120 * s) / t6
+            )
+
+    return out.reshape(orig_shape + (n,))
 
 #   Precompute V^{-1} for an order (3,4,5 pts)
 def precompute_Vinv(order):
@@ -156,10 +152,9 @@ def precompute_quadrature_points(thetas, order):
         all_points.extend(interval_points)
         end_idx = len(all_points)
         subinterval_map.append((start_idx, end_idx))
-    
     return np.array(all_points), subinterval_map, Vinv
 
-def get_weights_filon(k0_vec, z, x, thetas, theta_eval,
+'''def get_weights_filon(k0_vec, z, x, thetas, theta_eval,
                                  subinterval_map, Vinv):
     """
     Vectorized Filon weights for multiple frequencies.
@@ -205,4 +200,71 @@ def get_weights_filon(k0_vec, z, x, thetas, theta_eval,
         # Store weights
         Weights[:, start:end] = h * W * phase[:, None]
 
+    return Weights'''
+
+import time
+def get_weights_filon(k0_vec, z, x, thetas, theta_eval, Vinv, node_map):
+    """
+    Vectorized Filon weights for multiple frequencies.
+
+    Args:
+        k0_vec : array of shape (Nw,)
+        z, x   : source position
+        thetas : original partition (Nint + 1,)
+        theta_eval : full list of all quadrature nodes
+        Vinv   : inverse Vandermonde (n_nodes, n_nodes)
+        node_map : list of (interval_id, local_node_id) for each global node
+    Returns:
+        Weights : complex array of shape (Nw, Nquad)
+    """
+    Nw = k0_vec.size
+    Nquad = len(theta_eval)
+    n_nodes = Vinv.shape[0]
+   
+    a = thetas[:-1]
+    b = thetas[1:]
+    h = 0.5 * (b - a)
+    c = 0.5 * (a + b)
+    # Phase functions
+    G  = g(c, z, x)
+    Gp = g_prime(c, z, x)
+    # theta_bar: (Nint, Nw)
+    theta_bar = (Gp[:, None] * k0_vec[None, :]) * h[:, None]
+    # phase: (Nint, Nw)
+    phase = np.exp(1j * G[:, None] * k0_vec[None, :])
+    # Im: (Nint, Nw, n_nodes)
+    Im = filon_moments(theta_bar, n_nodes)
+    # Apply inverse Vandermonde
+    # W: (Nint, Nw, n_nodes)
+    W = Im @ Vinv.T
+    # Scaling
+    W *= h[:, None, None]
+    W *= phase[:, :, None]
+
+    max_entries = max(len(l) for l in node_map)
+    entries_i = -np.ones((Nquad, max_entries), dtype=np.int64)
+    entries_j = -np.ones((Nquad, max_entries), dtype=np.int64)
+    lengths = np.zeros(Nquad, dtype=np.int64)
+
+    #start = time.time()
+    for node, lst in enumerate(node_map):
+        lengths[node] = len(lst)
+        for k, (i, j) in enumerate(lst):
+            entries_i[node, k] = i
+            entries_j[node, k] = j
+    # Scatter into global quadrature array
+    Weights = assemble_weights_nodecentric(W, entries_i, entries_j, lengths, Nquad)
+    return Weights
+
+@nb.njit(parallel=True, fastmath=True)
+def assemble_weights_nodecentric(W, entries_i, entries_j, lengths, Nquad):
+    Nint, Nw, n_nodes = W.shape
+    Weights = np.zeros((Nw, Nquad), dtype=np.complex128)
+
+    for node in nb.prange(Nquad):
+        for k in range(lengths[node]):
+            i = entries_i[node, k]
+            j = entries_j[node, k]
+            for w in range(Nw):
+                Weights[w, node] += W[i, w, j]
     return Weights

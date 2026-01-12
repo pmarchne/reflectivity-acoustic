@@ -2,11 +2,15 @@ import numpy as np
 import time
 from src.parameters import Parameters
 from src.acquisition import Acquisition
-from src.utilities import ricker_wavelet, green2d_flat
-from src.quadrature.gauss_cheby import integral_kx_quadrature_numba
+from src.utilities import source_frequency, green2d_flat, inverse_fft_signal
+# from src.quadrature.gauss_cheby import integral_kx_quadrature_numba
 from src.quadrature.filon_Sommerfeld import Sommerfeld_integral
 
-def forward(layers, acq: Acquisition, param: Parameters, free_surface=False, nq_prop=1024, nq_evan=512):
+def forward(layers,
+            acq: Acquisition,
+            param: Parameters,
+            free_surface=False,
+            nq_prop=1024):
     """
     Forward modeling to compute predicted data d_cal
     using the reflectivity method with optional free surface.
@@ -16,62 +20,33 @@ def forward(layers, acq: Acquisition, param: Parameters, free_surface=False, nq_
         acq: Acquisition object with xs, zs, xr, zr
         param: Parameters object with dt, nfft, nt, time, freq
         free_surface: whether to include free surface at z=0
-    
     Returns:
         d_cal: array (Ns, Nr, nt) of predicted time-domain traces
     """
-    freqs = np.fft.rfftfreq(param.nfft, param.dt)
-    print("first freq", freqs[0])
-    epsilon = 1. # complex frequency damping
-    print("max epsilon =", np.log(50)/param.total_time)
-    omegas = 2.0 * np.pi * (freqs) + 1j * epsilon
-    vp_top = layers[0][1]
 
-    s_t, delay = ricker_wavelet(param.time, param.freq)
-    s_t = s_t * np.exp(-epsilon * param.time)
-    #print(f"Ricker wavelet initialized with delay: {delay} s")
-    # ---- FFT in omega using the +i w t convention ----
-    s_w = np.conj(np.fft.rfft(s_t, n=param.nfft)) 
-
-    #traces_full = np.conj(np.fft.irfft(np.conj(Signal*s_w), n=param.nfft, axis=1))
-    # ---- Acquisition geometry ----
-    xs, zs, xr, zr = acq.xs, acq.zs, acq.xr, acq.zr
-    Ns, Nr = xs.size, xr.size
-
-    # ---- kx quadrature ----
-    kx_factor = 4.
-    start = time.time() # z_travel
+    # 1. generate frequency domain array and source wavelet
+    source_freq, omegas, delay = source_frequency(param)
+    # 2. quadrature in spatial Fourier domain (kx or incidence angles)
+    start = time.time()
     R_map = Sommerfeld_integral(
-        layers, omegas, xs, zs, xr, zr,
-        nq_prop, nq_evan, kx_max_factor=kx_factor, free_surface=free_surface)
-    #R_map = integral_kx_quadrature_numba(
-    #    layers, omegas, xs, zs, xr, zr,
-    #    nq_prop, nq_evan, kx_max_factor=kx_factor, chunk=128, fs=free_surface)
+        layers, omegas, acq,
+        nq_prop, Nevan=64, kx_max_factor=4., free_surface=free_surface)
     end = time.time()
     print(f"kx quadrature elapsed: {end-start:.2f} s")
-    # Multiply by hanning window
-    #R_map = np.half_haning() # 0.5 *( 1+np.cos(omega*pi/Om) )
-    # ---- Flatten for source-receiver pairs ----
+
+    # flatten for all source-receiver pairs
     Ns, Nr, Nw = R_map.shape
     R_flat = R_map.reshape((Ns*Nr, Nw))
 
-    travel_xy = np.sqrt((xs[:, None] - xr[None, :])**2 + (zs[:, None] - zr[None, :])**2)
-    distances_flat = travel_xy.ravel()
-    G_flat = green2d_flat(omegas, vp_top, distances_flat)
+    # add Green function in homogeneous medium (top layer)
+    transfer = R_flat + green2d_flat(omegas, layers[0][1], acq.get_distances())
+    # apply source delay
+    transfer_delayed = transfer \
+        * np.exp(-1j * delay * omegas)[None, :]
 
-    #taper_freq = np.hanning(2*Nw)[Nw:] 
-
-    #np.savez("R_map.npz", R_map=R_map, omegas=omegas)
-    #T_flat = (R_flat+G_flat) * s_w[None, :] #* np.exp(-1j * delay * omegas)[None, :]
-    #T_flat = (np.real(G_flat)) * s_w[None, :]
-    T_flat = (R_flat+G_flat) * s_w[None, :] * np.exp(-1j * delay * omegas)[None, :]
+    # convolution with source in the frequency domain
+    response = transfer_delayed * source_freq[None, :] 
     # T_flat *= 1j*np.real(omegas) # ricker source time-derivative !
-
-    #T_flat *= taper_freq[None, :]
-    # ---- Inverse FFT to time domain ----
-    traces_full = np.conj(np.fft.irfft(np.conj(T_flat), n=param.nfft, axis=1))
-    traces_cut = traces_full[:, :param.nt] * np.exp(epsilon * param.time)
-
-    # ---- Reshape to (Ns, Nr, nt) ----
-    d_cal = traces_cut.reshape((Ns, Nr, param.nt))
+    traces = inverse_fft_signal(response, param)
+    d_cal = traces.reshape((Ns, Nr, param.nt))
     return d_cal
