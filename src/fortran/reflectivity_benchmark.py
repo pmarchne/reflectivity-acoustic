@@ -10,7 +10,7 @@ from plot.plot_tools import plot_reflectivity
 
 # Attempt to import the compiled Fortran module
 try:
-    import reflectivity
+    import src.fortran.reflectivity as reflectivity
     FORTRAN_AVAILABLE = True
     rfmod = reflectivity.reflectivity_mod
     print(rfmod.compute_reflectivity.__doc__)
@@ -111,12 +111,12 @@ def fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     )
     omegas = np.asfortranarray(omegas, dtype=np.complex128)
     p = np.asfortranarray(p, dtype=np.float64)
-    print("Calling Fortran reflectivity module...")
-    print(f"Layers: {h.size}, Frequencies: {nw}, q points: {nq}")
-    t0 = time.time()
+    #print("Calling Fortran reflectivity module...")
+    #print(f"Layers: {h.size}, Frequencies: {nw}, q points: {nq}")
+    #t0 = time.time()
     R = rfmod.compute_reflectivity(h, vp, rho, omegas, p, free_surface, zr, zs)
-    t1 = time.time()
-    print("fortran elapsed: {:.3f}s, R shape {}".format(t1-t0, R.shape))
+    #t1 = time.time()
+    #print("fortran elapsed: {:.3f}s, R shape {}".format(t1-t0, R.shape))
     return R
 
 def benchmark():

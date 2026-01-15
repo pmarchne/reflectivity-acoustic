@@ -1,6 +1,6 @@
 import numpy as np
 from utilities import get_kz_chunk
-from layers import layers_to_arrays
+from layers import to_arrays
 
 import time
 import matplotlib.pyplot as plt
@@ -31,7 +31,7 @@ def _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface):
     kx_chunk: (Nw, chunk)
     returns R_chunk: (Nw, chunk) complex128
     """
-    h, vp, rho = layers_to_arrays(layers)
+    h, vp, rho = to_arrays(layers)
     L = len(h)
     Nw, Nkx = kx_chunk.shape
     R = np.zeros((Nw, Nkx), dtype=np.complex128) 
@@ -172,7 +172,7 @@ def reflectivity(layers, omegas, thetas, zr, zs, mode="k0", use_numba=True, fs=F
         use_numba = False
 
     # unpack layers
-    h, vp, rho = layers_to_arrays(layers)
+    h, vp, rho = to_arrays(layers)
     vp_top = vp[0]  # top-layer velocity
     # shapes
     omegas = np.asarray(omegas)
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     #use_numba = True
     #chunk = 128
 
-    h, vp, rho = layers_to_arrays(layers)
+    h, vp, rho = to_arrays(layers)
     R_numpy = _reflectivity_numpy(layers, omegas, kx_grid)
     start = time.time()
     R_numba = _reflectivity_numba_core(h, vp, rho, omegas, kx_grid, 70., 80., free_surface=False)

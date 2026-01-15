@@ -43,5 +43,5 @@ class Parameters:
         """
         freqs = np.fft.rfftfreq(self.nfft, self.dt)
         omegas = 2.0 * np.pi * freqs + 1j * self.epsilon
-        print("max recommended epsilon =", np.log(50)/self.total_time)
+        #print("max recommended epsilon =", np.log(50)/self.total_time)
         return omegas

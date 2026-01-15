@@ -1,6 +1,17 @@
 import numpy as np
+from contextlib import contextmanager
+import time
 from scipy.special import hankel1
 from src.parameters import Parameters
+
+@contextmanager
+def timer(label: str, enabled: bool = True):
+    if enabled:
+        start = time.time()
+    yield
+    if enabled:
+        elapsed = time.time() - start
+        print(f"{label} elapsed: {elapsed:.2f} s")
 
 def ricker_wavelet(t, f0):
     """
@@ -23,7 +34,7 @@ def source_frequency(param: Parameters):
     """
     omegas = param.create_frequencies()
     source_time, delay = ricker_wavelet(param.time, param.f0)
-    print(f"Ricker wavelet initialized with delay: {delay} s")
+    #print(f"Ricker wavelet initialized with delay: {delay} s")
     source_time *= np.exp(-param.epsilon * param.time) # apply damping in time domain 
     # ---- FFT in omega using the +i w t convention ----
     source_freq = np.conj(np.fft.rfft(source_time, n=param.nfft))
