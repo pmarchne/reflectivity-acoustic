@@ -5,9 +5,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
+import numba as nb
 from scipy.linalg import solve
 
-# --- Helper Functions (Assumed from previous context) ---
+# --- Helper Functions ---
 def g(theta, z_abs, x):
     """Phase function g(theta) = |z|*cos(theta) + x*sin(theta)"""
     return z_abs * np.cos(theta) + x * np.sin(theta)
@@ -106,3 +107,122 @@ def composite_levin(A, B, M, k0, z_abs, x, R_func, N=12, epsilon=1.0):
         )
         total_integral += subinterval_integral
     return total_integral
+
+@nb.njit(parallel=True, fastmath=True)
+def get_weights_levin_numba(k0_vec, z_abs, x, thetas, N=12):
+    """
+    Vectorized Levin quadrature over all frequencies.
+
+    Returns:
+        G : array (Nw,) complex128
+    """
+    Nw = k0_vec.size
+    M = thetas.size - 1   # number of panels
+    G = np.zeros(Nw, dtype=np.complex128)
+
+    for w in nb.prange(Nw):
+        k0 = k0_vec[w]
+        acc = 0.0 + 0.0j
+
+        for m in range(M):
+            a = thetas[m]
+            b = thetas[m+1]
+
+            # --- Collocation nodes (Chebyshev-Lobatto)
+            j = np.arange(N)
+            cheb = -np.cos(np.pi * j / (N-1))
+            theta_j = 0.5*(b-a)*(cheb+1.0) + a
+
+            # --- Build basis
+            phi = np.empty((N, N))
+            phi_p = np.empty((N, N))
+
+            d0 = (theta_j[-1] - theta_j[0]) / 2.0
+            eps = 1.0 / d0
+            centers = theta_j - 0.25*(theta_j[-1]-theta_j[0])
+
+            for i in range(N):
+                for j in range(N):
+                    r = theta_j[i] - centers[j]
+                    tmp = np.sqrt(1.0 + (eps*r)**2)
+                    phi[i,j] = tmp
+                    phi_p[i,j] = eps*eps*r/tmp
+
+            # --- Build system
+            A = np.empty((N,N), dtype=np.complex128)
+            rhs = np.ones(N)  # R=1 case
+
+            for i in range(N):
+                gp = -z_abs*np.sin(theta_j[i]) + x*np.cos(theta_j[i])
+                for j in range(N):
+                    A[i,j] = phi_p[i,j] + 1j*k0*gp*phi[i,j]
+
+            alpha = solve_linear_system(A, rhs)
+
+            # --- Boundary evaluation
+            def evalP(t):
+                s = 0.0
+                for j in range(N):
+                    r = t - centers[j]
+                    s += alpha[j]*np.sqrt(1.0 + (eps*r)**2)
+                return s
+
+            Pa = evalP(a)
+            Pb = evalP(b)
+
+            ga = z_abs*np.cos(a) + x*np.sin(a)
+            gb = z_abs*np.cos(b) + x*np.sin(b)
+
+            acc += Pb*np.exp(1j*k0*gb) - Pa*np.exp(1j*k0*ga)
+
+        G[w] = acc
+
+    return G
+
+@nb.njit(fastmath=True)
+def solve_linear_system(A, b):
+    """
+    Solve Ax=b using Gaussian elimination with partial pivoting.
+    Numba-safe version (no fancy indexing).
+    """
+    N = A.shape[0]
+    A = A.copy()
+    b = b.astype(np.complex128).copy()
+
+    # Forward elimination
+    for k in range(N):
+        # Pivot selection
+        maxrow = k
+        maxval = abs(A[k, k])
+        for i in range(k+1, N):
+            if abs(A[i, k]) > maxval:
+                maxval = abs(A[i, k])
+                maxrow = i
+
+        # Manual row swap
+        if maxrow != k:
+            for j in range(N):
+                tmp = A[k, j]
+                A[k, j] = A[maxrow, j]
+                A[maxrow, j] = tmp
+            tmpb = b[k]
+            b[k] = b[maxrow]
+            b[maxrow] = tmpb
+
+        # Elimination
+        akk = A[k, k]
+        for i in range(k+1, N):
+            factor = A[i, k] / akk
+            for j in range(k, N):
+                A[i, j] -= factor * A[k, j]
+            b[i] -= factor * b[k]
+
+    # Back substitution
+    x = np.zeros(N, dtype=np.complex128)
+    for i in range(N-1, -1, -1):
+        s = 0.0 + 0.0j
+        for j in range(i+1, N):
+            s += A[i, j] * x[j]
+        x[i] = (b[i] - s) / A[i, i]
+
+    return x

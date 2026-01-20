@@ -3,11 +3,11 @@ from src.parameters import Parameters
 from src.acquisition import Acquisition
 from src.utilities import (
     source_frequency,
-    green2d_flat,
     inverse_fft_signal,
     timer,
 )
-from src.quadrature.filon_Sommerfeld import Sommerfeld_integral
+from src.kernels import green2d
+from src.quadrature.filon_Sommerfeld import Sommerfeld_integral2D
 
 def forward(layers,
             acq: Acquisition,
@@ -29,26 +29,24 @@ def forward(layers,
 
     # 1. generate frequency domain array and source wavelet
     source_freq, omegas, delay = source_frequency(param)
-    # 2. quadrature in spatial Fourier domain (kx or incidence angles)
+    # 2. quadrature in spatial Fourier domain (incidence angles)
     with timer("Sommerfeld quadrature", timing):
-        rmap = Sommerfeld_integral(
+        green_multi = Sommerfeld_integral2D(
             layers, omegas, acq,
-            nq_prop, Nevan=256, kx_max_factor=4., free_surface=free_surface)
+            nq_prop, Nevan=128, kx_max_factor=4., free_surface=free_surface)
 
     # flatten for all source-receiver pairs
-    Ns, Nr, Nw = rmap.shape
-    rmap = rmap.reshape((Ns*Nr, Nw))
+    Ns, Nr, Nw = green_multi.shape
+    green_multi = green_multi.reshape((Ns*Nr, Nw))
 
     # 3. add Green function in homogeneous medium (top layer)
-    transfer = rmap \
-        + green2d_flat(omegas, layers[0][1], acq.get_distances())
+    green_multi += green2d(omegas, layers[0][1], acq.get_distances())
     # reverse seismic source delay back to t=0 sec
-    transfer_delayed = transfer \
-        * np.exp(-1j * delay * omegas)[None, :]
+    green_multi *= np.exp(-1j * delay * omegas)[None, :]
 
     # 4. convolution with source in the frequency domain
-    response = transfer_delayed * source_freq[None, :] 
-    # T_flat *= 1j*np.real(omegas) # ricker source time-derivative !
+    response = green_multi * source_freq[None, :] 
+    # response *= 1j*np.real(omegas) # ricker source time-derivative !
 
     # 5. Inverse FFT to go back in time
     d_cal = inverse_fft_signal(response, param)

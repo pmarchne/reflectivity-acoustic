@@ -7,6 +7,22 @@ import numba as nb
 # Add src folder to Python path if running from an outer directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+''' 
+Propagative regime : after the substitution kx = k0 sin(theta), the 2D Sommerfeld integral takes the form
+            I_prop(x,z,w) = 1/(2*i)*int_{-pi/2}^{pi/2} R(theta, w) e^{i k_0 * g(theta)}
+with 
+    - k0 = w / vp_{top}
+    - R(theta, w): the reflectivity map
+    - g(theta) = |z|*cos(theta) + x*sin(theta)
+
+Evanescent regime : after the substitution s = k0 cosh(psi), the 2D Sommerfeld integral takes the form
+            I_evan(x,z,w) = -1/(4*pi)*int_{0}^{psi_max} R(psi, w) e^{-k_0 * h(psi)}
+with 
+    - k0 = w / vp_{top}
+    - R(psi, w): the reflectivity map
+    - h(psi) = |z|*sinh(psi) + i*x*cosh(psi)
+'''
+
 @nb.njit(fastmath=True)
 def g(cos_t, sin_t, z_abs, x):
     """Phase function g(theta) = |z|*cos(theta) + x*sin(theta)"""

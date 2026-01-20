@@ -1,7 +1,6 @@
 import numpy as np
 from contextlib import contextmanager
 import time
-from scipy.special import hankel1
 from src.parameters import Parameters
 
 @contextmanager
@@ -65,62 +64,6 @@ def low_freq_taper(omegas, omega_min):
     taper[mask] = 0.5 * (1 - np.cos(np.pi * omegas[mask] / omega_min))
 
     return taper
-
-def green2d(omegas, c, distances, eps=1e-10):
-    """
-    2D Green's function using the -i*omega*t time-harmonic convention.
-    ----------
-    omegas : float or array-like
-        Angular frequency/frequencies [rad/s].
-    c : float
-        Wave speed [m/s].
-    distances : float or array-like
-        Source–receiver distance(s) [m].
-    eps : float, optional
-        Small value to prevent kr = 0 singularities.
-    Returns
-    -------
-    G : complex ndarray
-        Green's function.
-        Shape:
-        - scalar if omegas and distances are scalars
-        - (N_receivers, N_frequencies) otherwise
-    """
-    omegas = np.atleast_1d(omegas)
-    r = np.atleast_1d(distances).astype(float)
-    # Prevent r = 0
-    r[r == 0] = eps
-    # Compute kr safely
-    k = omegas / c
-    kr = np.outer(k, r)
-    # Prevent kr = 0
-    kr = np.maximum(kr, eps)
-    G = -(1j / 4) * hankel1(0, kr)
-    # Return scalar if inputs were scalar
-    if G.size == 1:
-        return G.item()
-    return G.T  # (N_receivers, N_frequencies)
-
-def green2d_flat(omegas, c, distances):
-    """
-    Vectorized 2D Green's function for multiple frequencies and receiver distances.
-    Parameters:
-        omegas : array-like
-            Angular frequencies (rad/s).
-        c : float
-            Wave speed.
-        distances : array-like
-            Distances from source to receivers.
-    Returns:
-        G : np.ndarray
-            Complex Green's function matrix of shape (N_receivers, N_frequencies).
-    """
-    omegas = np.asarray(omegas)
-    r = np.ravel(distances).copy()
-    r[r == 0] = 1e-10  # avoid singularity
-    kr = np.outer(omegas / c, r)  # shape (N_frequencies, N_receivers)
-    G = -(1j / 4) * hankel1(0, kr)  # shape (N_frequencies, N_receivers)
-    return G.T  # shape (N_receivers, N_frequencies)
 
 def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
     """

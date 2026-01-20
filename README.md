@@ -1,49 +1,44 @@
 # Reflectivity-Acoustic
 
-This repository implements the **reflectivity method** for computing synthetic seismograms in **layered acoustic media**.  
-The approach is semi-analytical: we compute the 2D acoustic frequency-domain response of a layered stack by numerically integrating over all incidence angles the 1D Green kernel of the stack, obtained analytically using a recursive formula.  
-Finally, we return to the time domain via an inverse Fourier transform.
+This repository implements the **reflectivity method** for computing synthetic seismograms in the acoustic approximation. The reflectivity method is a semi-analytical approach tailored to **vertically layered media**.   
+The goal is to revisit the method in order to propose a cost-efficient alternative to spectral elements or finite difference schemes.  
+
+The method works as follows:  
+1. generate recursively a multi-layer reflection coefficient for all incidence angles,
+2. integrate over all incidence angles to obtain the frequency-domain response of the multi-layer stack,
+3. go back to the time domain via inverse Fourier transform.
+
+Once installed, you should be able to directly run the notebooks and generated seismograms.
 
 ---
 
 ## Green’s Function in the Wavenumber Domain
 
-To obtain the Green function of the layer stack in the frequency domain, we evaluate a **Sommerfeld integral** over the horizontal wavenumber \(k_x\):
+To obtain the Green function of the layer stack in the frequency domain, we evaluate a **Sommerfeld integral** over the horizontal wavenumber $k_x$:
 
-\[
+$$
 G(x,z,\omega)
 = \int_{-\infty}^{\infty}
 R(k_x, \omega) \,
 \frac{e^{i k_z z} \, e^{i k_x x}}{2 i k_z} \,
 \mathrm{d}k_x,
-\]
-
+$$
 where the vertical wavenumber is given by the dispersion relation
-
-\[
+$$
 k_z = \sqrt{k_0^2 - k_x^2},
 \qquad k_0 = \frac{\omega}{v_p}.
-\]
-
+$$
 We select the **principal branch** of the square root so that evanescent waves satisfy  
-\(\operatorname{Im}(k_z) > 0\).  
-The function \(R(k_x,\omega)\) is the **reflectivity map** of the layered stack.
-
----
+$\operatorname{Im}(k_z) > 0$.  
+The function $R(k_x,\omega)$ is the **reflectivity map** of the layered stack.
 
 ## Reflectivity of the Layer Stack
 
 Using interface conditions (continuity of pressure and vertical velocity), we construct recursively the reflectivity and obtain the **effective reflection coefficient** \(R(k_x,\omega)\), which incorporates all multiple reflections and transmissions.
 
-At the free surface \(z = 0\), we impose total reflection, which corresponds to a top reflectivity
-
-\[
-R_{\text{surface}} = -1.
-\]
+At the free surface \(z = 0\), we impose total reflection, which corresponds to a top reflectivity $R_{\text{surface}} = -1.$
 
 This boundary condition is introduced at the top of the recursive reflectivity computation.
-
----
 
 ## High-Level Procedure
 

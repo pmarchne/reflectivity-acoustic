@@ -16,7 +16,6 @@ from reflectivity_kx_omega import reflectivity
 from layers import to_arrays
 from quadrature.filon import precompute_quadrature_points, get_weights_filon, get_weights_filon_numba
 from acquisition import Acquisition
-from utilities import green2d
 from fortran.reflectivity_benchmark import fortran_reflectivity
 
 
@@ -89,7 +88,7 @@ def compute_prop(dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, dz_inverse, r
             acc_prop[p, w] = s
     return acc_prop
 
-def Sommerfeld_integral(
+def Sommerfeld_integral2D(
     layers,
     omega,
     acq: Acquisition,
@@ -139,7 +138,7 @@ def Sommerfeld_integral(
     ph = np.cosh(psi_i) / vp[0]
 
     for i, dzi in enumerate(dz_unique):
-        zs_eff = 2.*h[0] - acq.zr[0] - dzi # since dz = |2h - zr - zs|
+        zs_eff = 2.*h[0] - acq.zr[0] - dzi  # since dz = |2h - zr - zs|
         rmap_unique[i] = fortran_reflectivity(
             layers, omega, p,
             free_surface=free_surface,

@@ -17,36 +17,38 @@ plt.rcParams.update({
 })
 
 
-def plot_reflectivity(omegas, thetas, Rmap, omega_c):
-    plt.figure(figsize=(12, 6))
+def plot_reflectivity(omegas, thetas, rmap, omega_c, figsize=(12, 6)):
+    plt.figure(figsize=figsize)
     plt.subplot(1, 2, 1)
-    plt.imshow(np.abs(Rmap), origin='lower',
+    valmax = np.max(np.abs(rmap))
+    if valmax > 2:
+        valmax = 3.
+    plt.imshow(np.abs(rmap), origin='lower',
             extent=[180.*thetas[0]/np.pi, 180.*thetas[-1]/np.pi, np.real(omegas[0]), np.real(omegas[-1])],
             aspect='auto',
-            vmin=0, vmax=1.0)
+            vmin=0., vmax=valmax)
     plt.xlabel('Angle (deg)')
     plt.ylabel('frequency (Hz)')
-    plt.colorbar(label='|R|')
+    plt.colorbar(label='abs(R)')
 
     omega_idx = np.argmin(np.abs(omegas - omega_c))
-    R_at_omega = np.abs(Rmap[omega_idx, :])
+    r_omega = np.abs(rmap[omega_idx, :])
     plt.subplot(1, 2, 2)
-    plt.plot(180.*thetas/np.pi, R_at_omega, linewidth=2)
+    plt.plot(180.*thetas/np.pi, r_omega, linewidth=2)
 
     plt.xlabel('Angle (deg)')
-    plt.ylabel('|R|')
+    plt.ylabel('abs(R)')
     plt.grid(True, alpha=0.3)
-    plt.ylim([0, 2.0])
+    plt.ylim([0, 1.1*valmax])
     plt.tight_layout()
     plt.show()
 
-def plot_signal_time_freq(time, source_time, freq, source_freq):
-    plt.figure(figsize=(12, 4))
+def plot_signal_time_freq(time, source_time, freq, source_freq, figsize=(10,5)):
+    plt.figure(figsize=figsize)
     plt.subplot(1, 2, 1)
     plt.plot(time, source_time, 'b-')
     plt.xlabel('Time (s)')
-    plt.ylabel('Amplitude')
-    plt.title('time-domain')
+    plt.ylabel('Source')
     plt.grid()
 
     plt.subplot(1, 2, 2)
@@ -54,8 +56,6 @@ def plot_signal_time_freq(time, source_time, freq, source_freq):
     plt.plot(freq, np.imag(source_freq), 'r-', label="imag")
     plt.plot(freq, np.abs(source_freq), 'k:', label="abs")
     plt.xlabel('Frequency (Hz)')
-    plt.ylabel('Amplitude')
-    plt.title('frequency-domain')
     plt.grid()
     plt.legend()
     plt.tight_layout()

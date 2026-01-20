@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class Acquisition:
     """Class for acquisition geometry: sources and receivers positions."""
     def __init__(self, sources=None, receivers=None):
@@ -21,7 +22,7 @@ class Acquisition:
     @property
     def zr(self):
         return np.asarray(self.receivers[:, 1]).ravel() if len(self.receivers) else np.array([])
-    
+
     def get_distances(self):
         """
         Compute source-receiver distances from Acquisition object.
