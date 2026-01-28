@@ -132,10 +132,13 @@ def plot_layered_config(layers, xrecvs=None, xs=None, param='vp', cmap='cividis'
         # Draw rectangle for this layer
         ax.fill_between([x_min, x_max], z_top, z_bottom, 
                         color=color, edgecolor='black', linewidth=0.5)
-    
-    ax.plot(xs[0][0], xs[0][1], "ro", markersize=8)
-    for ind in range(len(xrecvs)-1):
-        ax.plot(xrecvs[ind], xs[0][1], "gx")
+
+    for inds, _ in enumerate(xs):
+        ax.plot(xs[inds][0], xs[inds][1], "ro", markersize=6)
+
+    for indr, _ in enumerate(xrecvs):
+        ax.plot(xrecvs[indr], xs[0][1], "gx")
+
     # Set labels and limits
     ax.set_xlabel('x (m)')
     ax.set_ylabel('Depth z (m)')
@@ -192,5 +195,26 @@ def plot_wiggle_traces(seismogram, xrecvs, time, trace_step=5, scale=1.0, figsiz
     ax.set_ylabel('Time [s]')
     ax.set_xlabel('Trace number')
     ax.invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+
+
+def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000., vmax=6000.):
+    plt.figure(figsize=(8, 5))
+    maxZ = np.max(Z)
+    contour_lines = plt.contour(X, Y, Z/maxZ,
+                                levels=16,
+                                colors="black",
+                                linewidths=1., linestyles="dotted")
+    plt.clabel(contour_lines, inline=True,
+               fontsize=6, fmt="%.2f")  # Add isovalue labels
+    plt.contourf(X, Y, Z/maxZ, levels=16, cmap="viridis_r")
+    plt.colorbar(label="$L^2$ misfit", aspect=50)
+    plt.scatter(vp_ref1, vp_ref2, s=115, c="red", 
+                marker='*', alpha=1, edgecolors='k')
+    plt.xlabel(r'$V_{P,1}$ [m/s]')
+    plt.ylabel(r'$V_{P,2}$ [m/s]')
+    plt.xlim([vmin, vmax])
+    plt.ylim([vmin, vmax])
     plt.tight_layout()
     plt.show()

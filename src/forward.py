@@ -9,6 +9,7 @@ from src.utilities import (
 from src.kernels import green2d
 from src.quadrature.filon_Sommerfeld import Sommerfeld_integral2D
 
+
 def forward(layers,
             acq: Acquisition,
             param: Parameters,
@@ -45,7 +46,7 @@ def forward(layers,
     green_multi *= np.exp(-1j * delay * omegas)[None, :]
 
     # 4. convolution with source in the frequency domain
-    response = green_multi * source_freq[None, :] 
+    response = green_multi * source_freq[None, :]
     # response *= 1j*np.real(omegas) # ricker source time-derivative !
 
     # 5. Inverse FFT to go back in time

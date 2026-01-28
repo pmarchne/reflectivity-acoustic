@@ -1,15 +1,21 @@
 import numpy as np
-from parameters import Parameters
-from acquisition import Acquisition
-from forward import forward
+from src.parameters import Parameters
+from src.acquisition import Acquisition
+from src.forward import forward
 
-def l2_misfit(dcal, dobs, layers, acqui: Acquisition, param: Parameters, std_noise=1.):
+
+def l2_misfit(dcal, dobs, std_noise):
     """ L2 misfit between predicted and observed data """
-    nobs = float(dobs.shape[1])
-    dcal = forward(layers, acqui, param)
-    residual = dcal - dobs
-    return 0.5 * param.dt * np.sum(residual**2) / (std_noise**2*nobs)
+    residual = dcal - dobs  # residual for all source/receiver pairs
+    return 0.5 * np.sum(residual**2) / (std_noise**2)
 
-def grad_l2_misft(d_cal, d_obs, layers, acqui: Acquisition, param: Parameters):
-    "to be implemented ..."
-    return None
+
+def add_noise(dobs, noise_level=0.02):
+    ampli = np.sqrt(np.mean(dobs**2)) # np.max(np.abs(dobs))
+    std_noise = noise_level * ampli  # 2% noise
+    noise = np.random.normal(
+        loc=0.0,
+        scale=std_noise,
+        size=dobs.shape
+    )
+    return dobs + noise, std_noise

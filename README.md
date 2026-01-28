@@ -1,21 +1,17 @@
 # Reflectivity-Acoustic
 
-This repository implements the **reflectivity method** for computing synthetic seismograms in the acoustic approximation. The reflectivity method is a semi-analytical approach tailored to **vertically layered media**.   
-The goal is to revisit the method in order to propose a cost-efficient alternative to spectral elements or finite difference schemes.  
+This repository implements the **reflectivity method** for computing synthetic seismograms in the _acoustic approximation_. The reflectivity method is a semi-analytical approach tailored to **vertically layered media**.   
+The goal is to revisit the method in order to propose an efficient alternative to spectral elements or finite difference codes.  
 
-The method works as follows:  
-1. generate recursively a multi-layer reflection coefficient for all incidence angles,
-2. integrate over all incidence angles to obtain the frequency-domain response of the multi-layer stack,
-3. go back to the time domain via inverse Fourier transform.
+The method operates in the Fourier in both space and time. The steps are as follows:
+1. generate recursively a multi-layer reflection coefficient for all incidence angles (i.e. all spatial wavenumbers),
+2. integrate over all incidence angles to obtain the frequency-domain response of the multi-layer stack. This amounts to evaluate a *Sommerfeld integral*.
+3. Multiply the result by the source spectrum, and go back to the time domain via inverse Fourier transform (iFFT).
 
-Once installed, you should be able to directly run the notebooks and generated seismograms.
+Additional details on how the method works are given below.
+## 2D Green function in the wavenumber domain
 
----
-
-## Green’s Function in the Wavenumber Domain
-
-To obtain the Green function of the layer stack in the frequency domain, we evaluate a **Sommerfeld integral** over the horizontal wavenumber $k_x$:
-
+To obtain the Green function of the layer stack in the frequency domain, we must evaluate a **Sommerfeld integral** over the horizontal wavenumber space $k_x$. This takes the form
 $$
 G(x,z,\omega)
 = \int_{-\infty}^{\infty}
@@ -28,44 +24,27 @@ $$
 k_z = \sqrt{k_0^2 - k_x^2},
 \qquad k_0 = \frac{\omega}{v_p}.
 $$
-We select the **principal branch** of the square root so that evanescent waves satisfy  
-$\operatorname{Im}(k_z) > 0$.  
-The function $R(k_x,\omega)$ is the **reflectivity map** of the layered stack.
+We select the **principal branch** of the square root so that evanescent waves satisfy $\operatorname{Im}(k_z) > 0$.  
+The function $R(k_x,\omega)$ is called the **reflectivity map** of the layered stack. If $R=1$, we have the standard Green kernel solution $G(x, z, \omega) = \frac{i}{4} H_0^{(1)} (kr), \, r=\sqrt{x^2+z^2}$.
 
 ## Reflectivity of the Layer Stack
 
-Using interface conditions (continuity of pressure and vertical velocity), we construct recursively the reflectivity and obtain the **effective reflection coefficient** \(R(k_x,\omega)\), which incorporates all multiple reflections and transmissions.
+Using interface conditions (continuity of pressure and vertical velocity) at each layer interface, we can construct recursively the reflectivity map $R(k_x,\omega)$, which incorporates all the multiple reflections of the stack.
 
-At the free surface \(z = 0\), we impose total reflection, which corresponds to a top reflectivity $R_{\text{surface}} = -1.$
-
-This boundary condition is introduced at the top of the recursive reflectivity computation.
-
-## High-Level Procedure
-
-Given a set of frequencies \(\omega\) and horizontal wavenumbers \(k_x\):
-
-1. Compute the reflectivity \(R(k_x,\omega)\) at the source depth.  
-2. Assemble the Sommerfeld integral using numerical quadrature.  
-3. Evaluate the integral for all source–receiver pairs.  
-4. Multiply by the source spectrum and apply an inverse FFT to obtain time-domain seismograms.
-
----
+In addition, we can set a free surface condition at $z = 0$, which corresponds to impose a reflection coefficient $R_{\text{surface}} = -1.$ on the top of the stack.
 
 ## Numerical Considerations
 
-- The integral is **singular**; introducing a small damping in frequency (complex \(\omega\)) stabilizes the integral.  
-- Propagating (\(k_x < k_0\)) and evanescent (\(k_x > k_0\)) regimes must be treated separately.  
-- The integrand becomes **highly oscillatory** at high frequencies and large offsets.  
+- The integral is **singular** at $k_x = k_0$; propagating $k_x < k_0$ and evanescent $k_x > k_0$ regimes must be treated separately.
+- introducing a small damping in the frequency range $\omega = \omega + \imath \alpha, \; \alpha > 0$ facilitates the quadrature. This artificial damping is removed _a posteriori_ after the iFFT. 
+- The integrand is **highly oscillatory** at high frequencies and for large offsets. This calls the need for specialized quadrature schemes tailored to highly oscillatory integrands.
 - The free surface introduces **resonances** in the reflectivity map.  
 
----
+## Things to do
 
-## Roadmap
-
-1. Compare results with a finite-difference wave solver.  
-2. Extend the implementation to **3D physics**.  
-3. Generate seismograms for large receiver arrays using **FFT acceleration**.  
-4. Optimize computation of the reflectivity map.  
-5. Compute the **exact gradient** of the forward model.  
-6. Prepare for **MCMC sampling** by plotting cost functions.
+- Compare results with a finite-difference wave solver.  
+- Extend the implementation to **3D physics**.  
+- Compute the **exact gradient** of the forward model with the adjoint method.  
+- Integrate with sampling and optimization methods.
+  
 

@@ -13,7 +13,7 @@ try:
     import src.fortran.reflectivity as reflectivity
     FORTRAN_AVAILABLE = True
     rfmod = reflectivity.reflectivity_mod
-    print(rfmod.compute_reflectivity.__doc__)
+    #print(rfmod.compute_reflectivity.__doc__)
 except Exception as e:
     print("Fortran module not available:", e)
     FORTRAN_AVAILABLE = False
