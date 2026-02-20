@@ -1,8 +1,10 @@
 # Reflectivity-Acoustic
 
-This repository implements the **reflectivity method** for computing synthetic seismograms in the _acoustic approximation_. The reflectivity method is a semi-analytical approach tailored to **vertically layered media**.   
-The goal is to revisit the method in order to propose an efficient alternative to spectral elements or finite difference codes.  
+This repository implements the **reflectivity method** for computing synthetic seismograms in the acoustic approximation. The reflectivity method is a semi-analytical method that allows to solve the wave equation in **vertically layered media**. The goal is to leverage this assumption in order to propose a fast alternative to spectral elements or finite difference implementations.  
 
+> This project is currently in progress
+
+# Methodology 
 The method operates in the Fourier in both space and time. The steps are as follows:
 1. generate recursively a multi-layer reflection coefficient for all incidence angles (i.e. all spatial wavenumbers),
 2. integrate over all incidence angles to obtain the frequency-domain response of the multi-layer stack. This amounts to evaluate a *Sommerfeld integral*.
@@ -45,6 +47,11 @@ In addition, we can set a free surface condition at $z = 0$, which corresponds t
 - Compare results with a finite-difference wave solver.  
 - Extend the implementation to **3D physics**.  
 - Compute the **exact gradient** of the forward model with the adjoint method.  
-- Integrate with sampling and optimization methods.
+- Extend to the elastic case
+
+## References
+1. Mallick, S., & Frazer, L. N. (1987). Practical aspects of reflectivity modeling. Geophysics, 52(10), 1355-1364.
+2. Muller, G. (1985). The reflectivity method: a tutorial. Journal of Geophysics, 58(1), 153-174.
+
   
 

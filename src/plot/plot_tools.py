@@ -130,19 +130,19 @@ def plot_layered_config(layers, xrecvs=None, xs=None, param='vp', cmap='cividis'
         color = cmap_obj(norm(param_vals[i]))
         
         # Draw rectangle for this layer
-        ax.fill_between([x_min, x_max], z_top, z_bottom, 
+        ax.fill_between([0., x_max], z_top, z_bottom, 
                         color=color, edgecolor='black', linewidth=0.5)
 
     for inds, _ in enumerate(xs):
-        ax.plot(xs[inds][0], xs[inds][1], "ro", markersize=6)
+        ax.plot(xs[inds][0], xs[inds][1], "ro", markersize=8)
 
     for indr, _ in enumerate(xrecvs):
         ax.plot(xrecvs[indr], xs[0][1], "gx")
 
     # Set labels and limits
     ax.set_xlabel('x (m)')
-    ax.set_ylabel('Depth z (m)')
-    ax.set_xlim(x_min, x_max)
+    ax.set_ylabel('Depth (m)')
+    ax.set_xlim(0., x_max)
     ax.set_ylim(0, z_max)
     ax.invert_yaxis()  # depth increases downward
     
@@ -151,7 +151,7 @@ def plot_layered_config(layers, xrecvs=None, xs=None, param='vp', cmap='cividis'
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, label=get_param_label(param))
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
 from matplotlib.colors import ListedColormap
 def plot_seismogram(seismogram, xrecvs, time, vmin=-0.06, vmax=0.06, cmap='seismic', ncolors=256, figsize=(8, 10)):
@@ -176,7 +176,7 @@ def plot_seismogram(seismogram, xrecvs, time, vmin=-0.06, vmax=0.06, cmap='seism
     ax.set_ylabel('Time [s]')
     ax.set_title('Seismogram')
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
 
 def plot_wiggle_traces(seismogram, xrecvs, time, trace_step=5, scale=1.0, figsize=(10, 8)):
@@ -199,22 +199,24 @@ def plot_wiggle_traces(seismogram, xrecvs, time, trace_step=5, scale=1.0, figsiz
     plt.show()
 
 
-def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000., vmax=6000.):
+def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000., vmax=6000., title='my_title'):
     plt.figure(figsize=(8, 5))
-    maxZ = np.max(Z)
-    contour_lines = plt.contour(X, Y, Z/maxZ,
+    #maxZ = np.max(Z)
+    contour_lines = plt.contour(X, Y, Z,
                                 levels=16,
                                 colors="black",
                                 linewidths=1., linestyles="dotted")
     plt.clabel(contour_lines, inline=True,
                fontsize=6, fmt="%.2f")  # Add isovalue labels
-    plt.contourf(X, Y, Z/maxZ, levels=16, cmap="viridis_r")
-    plt.colorbar(label="$L^2$ misfit", aspect=50)
+    plt.contourf(X, Y, Z, levels=16, cmap="viridis_r")
+    #plt.colorbar(label="$L^2$ misfit", aspect=50)
+    plt.colorbar(aspect=50)
     plt.scatter(vp_ref1, vp_ref2, s=115, c="red", 
                 marker='*', alpha=1, edgecolors='k')
     plt.xlabel(r'$V_{P,1}$ [m/s]')
     plt.ylabel(r'$V_{P,2}$ [m/s]')
     plt.xlim([vmin, vmax])
     plt.ylim([vmin, vmax])
+    plt.title(title)
     plt.tight_layout()
     plt.show()
