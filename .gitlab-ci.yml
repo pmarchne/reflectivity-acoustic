@@ -1,12 +1,11 @@
 test:
-image: python:3.10.12
+  image: python:3.10.12
 
-variables:
-PYTHONPATH: "."
+  variables:
+    PYTHONPATH: "."
 
-before_script:
-- pip install pytest numpy
+  before_script:
+    - pip install pytest numpy
 
-script:
-- pytest
-
+  script:
+    - pytest
