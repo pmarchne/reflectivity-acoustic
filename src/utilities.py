@@ -12,19 +12,18 @@ def timer(label: str, enabled: bool = True):
         elapsed = time.time() - start
         print(f"{label} elapsed: {elapsed:.2f} s")
 
-def ricker_wavelet(t, f0):
+def ricker_wavelet(t, f0, t0=0.2):
     """
     Parameters:
         t : time variable [s].
         f0 : central frequency [Hz].
+        t0 : wavelet time shift [s].
     Returns:
         ricker : wavelet values.
-        t0 : wavelet time shift [s].
     """
-    t0 = 0.2  # add a small positive time shift to enforce causality
     tau = t - t0
     ricker = (1 - 2 * (np.pi * f0 * tau)**2) * np.exp(-(np.pi * f0 * tau)**2)
-    return ricker, t0
+    return ricker
 
 def source_frequency(param: Parameters):
     """
@@ -32,13 +31,13 @@ def source_frequency(param: Parameters):
     param: Parameters object
     """
     omegas = param.create_frequencies()
-    source_time, delay = ricker_wavelet(param.time, param.f0)
+    source_time = ricker_wavelet(param.time, param.f0, param.delay)
     #print(f"Ricker wavelet initialized with delay: {delay} s")
     source_time *= np.exp(-param.epsilon * param.time) # apply damping in time domain 
     # ---- FFT in omega using the +i w t convention ----
     source_freq = np.conj(np.fft.rfft(source_time, n=param.nfft))
 
-    return source_freq, omegas, delay
+    return source_freq, omegas
 
 def inverse_fft_signal(signal_freq, param, windowing=None):
     """
@@ -65,27 +64,11 @@ def low_freq_taper(omegas, omega_min):
 
     return taper
 
-def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
-    """
-    Compute vertical wavenumber kz for a chunk of horizontal wavenumbers.
-    Parameters:
-        omega : array-like, shape (Nw,)
-            Angular frequencies.
-        c : float
-            Wave speed for the layer.
-        kx_chunk : array-like, shape (chunk,)
-            Horizontal wavenumbers for this chunk.
-    Returns:
-        kz : np.ndarray, shape (Nw, chunk)
-            Vertical wavenumber matrix (principal branch, imag(kz) >= 0).
-    """
-    omega = np.asarray(omega)  # shape (Nw,)
-    kx = np.asarray(kx_chunk)[None, :]  # shape (1, chunk)
-    k0 = omega[:, None] / c  # shape (Nw, 1)
-
-    kz2 = k0**2 - kx**2  # shape (Nw, chunk)
+def get_kz(omega, vp, p) -> np.ndarray:
+    omega = np.asarray(omega)[:, None]  # shape (Nw,)
+    p = np.asarray(p)[None, :]  # shape (Np,)
+    kz2 = omega**2 * (1.0 / vp**2 - p**2)
     kz = np.sqrt(kz2 + 0j)  # principal branch
-
     # enforce principal branch (imag(kz) >= 0)
     kz = np.where(np.imag(kz) < 0, -kz, kz)
     return kz

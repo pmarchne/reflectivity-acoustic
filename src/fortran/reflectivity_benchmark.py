@@ -26,17 +26,18 @@ def numpy_reflectivity_p(
     p,
     free_surface=1,
     zr=70.0,
-    zs=70.0,
+    zs=80.0
 ):
+    # let complex model parameters for adjoint gradient check
     h, vp, rho = map(
-        lambda x: np.asarray(x, dtype=np.float64),
+        lambda x: np.asarray(x, dtype=np.complex128),
         zip(*layers)
     )
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
     p2 = p**2
 
-    L = len(h)
+    nlay = len(h)
     nw = omegas.size
     nk = p.size
 
@@ -45,15 +46,13 @@ def numpy_reflectivity_p(
     for iw, omega in enumerate(omegas):
         omega2 = omega * omega
 
-        kz_next = np.sqrt(
-            omega2 * (1.0 / vp[-1]**2 - p2) + 0j
-        )
+        Rval = np.zeros(nk, dtype=np.complex128)
+
+        kz_next = np.sqrt(omega2 * (1.0 / vp[-1]**2 - p2) + 0j)
         kz_next = np.where(np.imag(kz_next) < 0, -kz_next, kz_next)
         Z_next = omega * rho[-1] / kz_next
 
-        Rval = np.zeros(nk, dtype=np.complex128)
-
-        for ell in range(L - 2, -1, -1):
+        for ell in range(nlay - 2, -1, -1):
             kz_cur = np.sqrt(
                 omega2 * (1.0 / vp[ell]**2 - p2) + 0j
             )
@@ -62,37 +61,22 @@ def numpy_reflectivity_p(
             Z_cur = omega * rho[ell] / kz_cur
             r = (Z_next - Z_cur) / (Z_next + Z_cur)
 
-            phase = np.exp(2j * kz_next * h[ell + 1])
+            phase = np.exp(2j * kz_next * h[ell+1])
             Rval = (r + Rval * phase) / (1.0 + r * Rval * phase)
 
             kz_next = kz_cur
             Z_next = Z_cur
-
-        # ---- free surface ----
-        if free_surface == 1:
-            dzminus = abs(zr - zs)
-            dzplus = abs(zr + zs)
-
-            direct = np.exp(1j * kz_next * dzminus)
-            image = -np.exp(1j * kz_next * dzplus)
-            Gsr = direct + image
-
-            roundtrip = Rval * (-1.0) * np.exp(2j * kz_next * h[0])
-            denom = 1.0 - roundtrip
-            denom = np.where(np.abs(denom) < 1e-12, 1e-12 + 0j, denom)
-
-            Rval = Rval / denom * Gsr - direct
+        
+        if free_surface:
+            cavity = 1.0 / (1.0 + Rval * np.exp(2j * kz_next * h[0]))
+            ghost = -4.0 * np.sin(kz_next * zs) * np.sin(kz_next * zr)
+            Rval = cavity * Rval * ghost
 
         R[iw] = Rval
 
     return R
 
-def reflectivity_q(
-    layers,
-    omegas,
-    p,
-    **kwargs
-):
+def reflectivity_q(layers, omegas, p, **kwargs):
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
     R = numpy_reflectivity_p(layers, omegas, p, **kwargs)
@@ -100,8 +84,8 @@ def reflectivity_q(
 
 # --- helper to call Fortran reflectivity ---
 def fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
-    #if not FORTRAN_AVAILABLE:
-    #    raise RuntimeError("Fortran module not compiled/importable")
+    if not FORTRAN_AVAILABLE:
+        raise RuntimeError("Fortran module not compiled/importable")
     nw = omegas.size
     nq = p.size
     
@@ -144,7 +128,7 @@ def benchmark():
 
     # real benchmark
     print("\n ----- Benchmark ----- ")
-    repeats = 10
+    repeats = 4
     t_np = 0.0
     for r in range(repeats):
         t0 = time.time()

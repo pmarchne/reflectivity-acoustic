@@ -40,11 +40,10 @@ contains
     real(dp), allocatable :: vp_inv2(:), p2(:)
 
     integer :: iw, ik, ell
-    real(dp) :: dzminus, dzplus, abs_denom
     complex(dp) :: omega, omega2
     complex(dp) :: kz_cur, kz_next, Z_cur, Z_next
     complex(dp) :: Rval, rint, phase
-    complex(dp) :: direct, image, Gsr, roundtrip, denominator
+    complex(dp) :: ghost, cavity
     complex(dp) :: k02_term, numerator, denom_update
 
     complex(dp), parameter :: zero    = (0.0_dp, 0.0_dp)
@@ -75,8 +74,8 @@ contains
     !$OMP PARALLEL DO PRIVATE( &
     !$OMP   ik, ell, omega, omega2, &
     !$OMP   k02_term, kz_cur, kz_next, Z_cur, Z_next, &
-    !$OMP   Rval, rint, phase, numerator, denom_update, denominator, abs_denom, &
-    !$OMP   dzminus, dzplus, direct, image, Gsr, roundtrip ) &
+    !$OMP   Rval, rint, phase, numerator, denom_update, &
+    !$OMP   ghost, cavity ) &
     !$OMP SCHEDULE(static) COLLAPSE(2)
 
     do iw = 1, nw
@@ -118,24 +117,9 @@ contains
 
         ! ---- Free surface boundary condition ----
         if (free_surface == 1) then
-          dzminus = abs(zr - zs)
-          dzplus  = abs(zr + zs)
-
-          direct = exp(i_unit * kz_next * dzminus)
-          image  = neg_one * exp(i_unit * kz_next * dzplus)
-          Gsr    = direct + image
-
-          roundtrip = Rval * neg_one * exp(two_i * kz_next * h(1))
-          denominator = one - roundtrip
-
-          ! Match numpy's threshold: replace small denominators with eps
-          abs_denom = abs(denominator)
-          if (abs_denom < eps_denom) then
-            denominator = cmplx(eps_denom, 0.0_dp, dp)
-          end if
-
-          ! Apply free surface correction
-          Rval = (Rval / denominator) * Gsr - direct
+          cavity = 1.0 / (1.0 + Rval * exp(two_i * kz_next * h(1)))
+          ghost = -4.0 * sin(kz_next * zs) * sin(kz_next * zr)
+          Rval = cavity * Rval * ghost
         end if
 
         R(iw, ik) = Rval

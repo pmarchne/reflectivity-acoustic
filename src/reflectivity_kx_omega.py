@@ -1,5 +1,4 @@
 import numpy as np
-from utilities import get_kz_chunk
 from layers import to_arrays
 
 import time

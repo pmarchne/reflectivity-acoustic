@@ -12,12 +12,12 @@ from scipy.special import roots_legendre
 # add src folder to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from reflectivity_kx_omega import reflectivity
+#from reflectivity_kx_omega import reflectivity
 from layers import to_arrays
 from quadrature.filon import precompute_quadrature_points, get_weights_filon, get_weights_filon_numba
 from acquisition import Acquisition
-from fortran.reflectivity_benchmark import fortran_reflectivity
-
+from fortran.reflectivity_benchmark import fortran_reflectivity, reflectivity_q
+from utilities import get_kz
 
 def integrand_evan_cosh(psi, k0, z_abs, x):
     phase = z_abs *np.sinh(psi) - 1j * x *np.cosh(psi)
@@ -26,7 +26,7 @@ def integrand_evan_cosh(psi, k0, z_abs, x):
 @nb.njit(parallel=True, fastmath=True)
 def compute_evanescent(dz_vec, dx_vec, k0_vec,
                        sinh_psi, cosh_psi,
-                       dz_inverse, rmap_evan, weights_ev, scaling):
+                       rmap_evan, weights_ev, scaling):
     Np = dz_vec.size
     Nw = k0_vec.size
     Nquad = sinh_psi.size
@@ -37,7 +37,6 @@ def compute_evanescent(dz_vec, dx_vec, k0_vec,
     acc_evan = np.zeros((Np, Nw), dtype=np.complex128)
 
     for p in nb.prange(Np):
-        ridx = dz_inverse[p]
         dz = dz_vec[p]
         dx = dx_vec[p]
         # Precompute phase arrays (size Nquad)
@@ -55,7 +54,7 @@ def compute_evanescent(dz_vec, dx_vec, k0_vec,
                 val = (
                     np.exp(-k0 * phase_min[q])
                     + np.exp(-k0 * phase_plus[q])
-                ) * rmap_evan[ridx, w, q] * weights_ev[q]
+                ) * rmap_evan[w, q] * weights_ev[q]
                 s += val
             acc_evan[p, w] = scaling * s
     return acc_evan
@@ -71,20 +70,19 @@ def get_integrand_evan_param(kx_max_factor, nevan):
     return sinh_psi, cosh_psi, psi_i, weights_leg, scale_factor
 
 @nb.njit(parallel=True, fastmath=True)
-def compute_prop(dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, dz_inverse, rmap):
+def compute_prop(dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, rmap):
     Np = dz_vec.size
     Nw = k0_vec.size
     Ntheta_eval = len(Vinv)*(len(thetas)-1)
     acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
     for p in nb.prange(Np):
-        ridx = dz_inverse[p]
         weights = np.zeros((Nw, Ntheta_eval), dtype=np.complex128)
         weights = get_weights_filon_numba(k0_vec, dz_vec[p], dx_vec[p], thetas, Vinv, global_idx, weights)
         # acc_prop[p, :] = np.sum(weights * rmap, axis=1) # Rmap of size # (Nw, Nquad)
         for w in range(Nw):
             s = 0.0 + 0.0j
             for q in range(Ntheta_eval):
-                s += weights[w, q] * rmap[ridx, w, q]
+                s += weights[w, q] * rmap[w, q]
             acc_prop[p, w] = s
     return acc_prop
 
@@ -96,12 +94,9 @@ def Sommerfeld_integral2D(
     kx_max_factor=4.0, 
     free_surface=1
 ):
-    # layers
+    # layers properties
     h, vp, _ = to_arrays(layers)
-    # omegas
     Nw = omega.size
-    k0_vec = omega / vp[0]
-    # ---- Acquisition geometry ----
     Ns, Nr = acq.xs.size, acq.xr.size
     
     if len(set(acq.zr)) != 1:
@@ -112,99 +107,44 @@ def Sommerfeld_integral2D(
         )
 
     dx_mat = np.abs(acq.xs[:, None] - acq.xr[None, :])  # Ns × Nr
-    dz_mat = np.abs(2*h[0] - acq.zs[:, None] - acq.zr[None, :])  # Ns × Nr
-
-    dx_vec = dx_mat.ravel() 
-    dz_vec = dz_mat.ravel()
-    dz_unique, dz_inverse = np.unique(dz_vec, return_inverse=True)
-
+    dx_vec = dx_mat.ravel()
     Np = dx_vec.size
+
+    # quadrature setup
+    thetas = np.linspace(-np.pi/2., np.pi/2., Ntheta)
+    theta_eval, Vinv, global_idx = precompute_quadrature_points(thetas, 'chebychev')
+    sinh_psi, cosh_psi, psi_i, weights_ev, scaling = get_integrand_evan_param(kx_max_factor, Nevan)
+    p = np.sin(theta_eval) / vp[0]
+    ph = np.cosh(psi_i) / vp[0]
+
+    # reflectivity of the stack
+    #R_prop = reflectivity_q(layers, omega, p)
+    R_prop = fortran_reflectivity(layers, omega, p, free_surface=free_surface, zr=acq.zr[0], zs=acq.zs[0])
+    R_evan = fortran_reflectivity(layers, omega, ph, free_surface=free_surface, zr=acq.zr[0], zs=acq.zs[0])
+    #R_evan = reflectivity_q(layers, omega, ph)
+    #kz0_prop, kz0_evan = get_kz(omega, vp[0], p), get_kz(omega, vp[0], ph) 
+
+    if free_surface:
+        dz_refl = 2.0 * h[0]
+    else:
+        dz_refl = 2.0 * h[0] - acq.zs[0] - acq.zr[0]
 
     # accumulators: (Np, Nwa)
     acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
     acc_evan = np.zeros_like(acc_prop)
+    k0_vec = omega / vp[0]
+    dz_vec = np.full_like(dx_vec, dz_refl)
 
-    thetas = np.linspace(-np.pi/2., np.pi/2., Ntheta)
-    theta_eval, Vinv, global_idx = precompute_quadrature_points(thetas, 'chebychev')
+    acc_prop = compute_prop(
+        dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, R_prop
+    )
+    acc_evan = compute_evanescent(
+        dz_vec, dx_vec, k0_vec, sinh_psi, cosh_psi,
+        R_evan, weights_ev, scaling
+    )
 
-    Nz = len(dz_unique)
-
-    rmap_unique = np.zeros((Nz, Nw, len(theta_eval)), dtype=np.complex128)
-    rmap_evan_unique = np.zeros((Nz, Nw, Nevan), dtype=np.complex128)
-
-    p = np.sin(theta_eval) / vp[0]
-
-    sinh_psi, cosh_psi, psi_i, weights_ev, scaling = get_integrand_evan_param(kx_max_factor, Nevan)
-    ph = np.cosh(psi_i) / vp[0]
-
-    for i, dzi in enumerate(dz_unique):
-        zs_eff = 2.*h[0] - acq.zr[0] - dzi  # since dz = |2h - zr - zs|
-        rmap_unique[i] = fortran_reflectivity(
-            layers, omega, p,
-            free_surface=free_surface,
-            zr=acq.zr[0],
-            zs=zs_eff
-        )
-        rmap_evan_unique[i] = fortran_reflectivity(
-            layers, omega, ph,
-            free_surface=free_surface,
-            zr=acq.zr[0],
-            zs=zs_eff
-        )
-
-    #rmap = fortran_reflectivity(layers, omega, p, free_surface=1, zr=76., zs=76.)
-    #rmap_evan = fortran_reflectivity(layers, omega, ph, free_surface=1, zr=76., zs=76.)
-
-    acc_prop = compute_prop(dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, dz_inverse, rmap_unique)
-    acc_evan = compute_evanescent(dz_vec, dx_vec, k0_vec, sinh_psi, cosh_psi, dz_inverse, rmap_evan_unique, weights_ev, scaling)
-
-    I_total = -(acc_evan+1j*acc_prop) / (4.*np.pi)
-    res_pairs = I_total.reshape((Ns, Nr, Nw))
+    int_total = -(acc_evan+1j*acc_prop) / (4.*np.pi)
+    res_pairs = int_total.reshape((Ns, Nr, Nw))
 
     return res_pairs
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    layers = [
-        (100.0, 1500.0, 2000.0),
-        (250.0, 2900.0, 2000.0),
-    ]
-    h, vp = layers[0][0], layers[0][1]
-
-    freqs = np.linspace(0.1, 300.0, 600)
-    omega = 2.0 * np.pi * freqs #+ 10.*1j
-    # x and z positions of sources
-    sources = [(30.0, 76.0), (80.0, 76.0)]
-    receivers = [(200.0, 76.0), (800.0, 76.0)]
-    acq = Acquisition(sources, receivers)
-    xs, zs, xr, zr = acq.xs, acq.zs, acq.xr, acq.zr
-
-    r_direct = np.sqrt( (acq.xs[0] - acq.xr[0])**2 + (acq.zs[0] - acq.zr[0])**2 )
-
-    kx_factor = 4.
-    nq_prop = 600
-    nq_evan = 256
-    start = time.time() # z_travel
-    result = Sommerfeld_integral(
-        layers, omega, xs, zs, xr, zr,
-        nq_prop, nq_evan, kx_max_factor=kx_factor)
-    end = time.time()
-    print(f"quadrature elapsed: {end-start:.2f} s")
-
-    G_quad = result[0, 0, :]
-    Green = green2d(omega, vp, r_direct)
-
-    plt.figure()
-    plt.subplot(1,2,1)
-    plt.plot(omega, np.real(Green), 'r--')
-    plt.plot(omega, np.real(G_quad), 'b:')
-    plt.xlabel('omega')
-    plt.grid()
-
-    plt.subplot(1,2,2)
-    plt.plot(omega, np.imag(Green), 'g--')
-    plt.plot(omega, np.imag(G_quad), 'b-.')
-    plt.xlabel('omega')
-    plt.grid()
-    plt.show()
 

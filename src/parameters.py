@@ -16,7 +16,7 @@ class Parameters:
             Number of time samples.
     """
 
-    def __init__(self, total_time=3.0, nt=1024, f0=15.0, nfft=2048, epsilon=0.0):
+    def __init__(self, total_time=3.0, nt=1024, f0=15.0, nfft=2048, epsilon=0.0, delay=0.2):
         if nfft < nt:
             raise ValueError("nfft should be larger than nt")
         self.nt = nt
@@ -26,10 +26,11 @@ class Parameters:
         self.dt = total_time / (nt-1)
         self.time = np.arange(nt) * self.dt
         self.epsilon = epsilon  # 0.8 * np.log(50.) / total_time  # default damping factor
+        self.delay = delay
 
     def __repr__(self):
         return (f"Parameters(total_time={self.total_time}, nt={self.nt}, "
-                f"f0={self.f0}, nfft={self.nfft}, dt={self.dt}, epsilon={self.epsilon})")
+                f"f0={self.f0}, nfft={self.nfft}, dt={self.dt}, epsilon={self.epsilon}, delay={self.delay})")
 
     def create_frequencies(self):
         """

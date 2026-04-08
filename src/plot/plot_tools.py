@@ -1,20 +1,26 @@
+import sys
+import os
+# add src folder to Python path
+sys.path.append(os.path.abspath(os.path.join("../../")))
+
 import matplotlib.pyplot as plt
 import numpy as np
 from src.layers import to_arrays
 
-plt.rcParams.update({
-    "text.usetex": True,         # Use LaTeX
-    "font.family": "serif",      # Use serif fonts
-    "font.size": 18,             # Set font size
-    "axes.labelsize": 18,        # Label font size
-    "legend.fontsize": 18,       # Legend font size
-    "xtick.labelsize": 18,       # X-axis tick size
-    "ytick.labelsize": 18,       # Y-axis tick size
-    "figure.figsize": (8,6),     # Set figure size
-    "lines.linewidth": 1.5,        # Line thickness
-    "grid.alpha": 0.5,           # Grid transparency
-    "savefig.dpi": 300           # High-resolution images
-})
+def set_plot_style():
+    plt.rcParams.update({
+        "text.usetex": True,         # Use LaTeX
+        "font.family": "serif",      # Use serif fonts
+        "font.size": 18,             # Set font size
+        "axes.labelsize": 18,        # Label font size
+        "legend.fontsize": 18,       # Legend font size
+        "xtick.labelsize": 18,       # X-axis tick size
+        "ytick.labelsize": 18,       # Y-axis tick size
+        "figure.figsize": (8,6),     # Set figure size
+        "lines.linewidth": 1.5,        # Line thickness
+        "grid.alpha": 0.5,           # Grid transparency
+        "savefig.dpi": 300           # High-resolution images
+    })
 
 
 def plot_reflectivity(omegas, thetas, rmap, omega_c, figsize=(12, 6)):
@@ -115,7 +121,7 @@ def plot_layered_config(layers, xrecvs=None, xs=None, param='vp', cmap='cividis'
     x_min, x_max = np.min(xrecvs), np.max(xrecvs)
     
     # Calculate cumulative depths
-    z_interfaces = np.concatenate([[0], hs])
+    z_interfaces = np.concatenate([[0], np.cumsum(hs)])
     z_max = z_interfaces[-1]
     
     fig, ax = plt.subplots(figsize=(5, 5))
@@ -175,7 +181,7 @@ def plot_seismogram(seismogram, xrecvs, time, vmin=-0.06, vmax=0.06, cmap='seism
     ax.set_xlabel('Receiver position [m]')
     ax.set_ylabel('Time [s]')
     ax.set_title('Seismogram')
-    plt.tight_layout()
+    #plt.tight_layout()
     #plt.show()
 
 
