@@ -1,6 +1,3 @@
-import os
-import sys
-sys.path.append(os.path.abspath(os.path.join("../")))
 
 from pathlib import Path
 import numpy as np
@@ -104,6 +101,8 @@ def test_FD_reflectivity():
     receivers = [(x, 75.0) for x in x_receivers]
     acq = Acquisition(sources, receivers)
 
+    # warm-up
+    _ = forward(layers, acq, param, nq_prop=10, free_surface=0, timing=False)
     d_cal = forward(layers, acq, param, nq_prop=1024, free_surface=1, timing=True)
     ref = d_cal[0, :, :]
 
