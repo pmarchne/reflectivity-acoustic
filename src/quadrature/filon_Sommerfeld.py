@@ -30,11 +30,14 @@ def compute_evanescent(dz_vec, dx_vec, k0_vec,
     Np = dz_vec.size
     Nw = k0_vec.size
     Nquad = sinh_psi.size
+
     sinh_psi = sinh_psi.ravel()
     cosh_psi = cosh_psi.ravel()
     weights_ev = weights_ev.ravel()
+    
     k0_vec = k0_vec.ravel()
     acc_evan = np.zeros((Np, Nw), dtype=np.complex128)
+    kernel_evan = np.zeros((Np, Nw, Nquad), dtype=np.complex128)
 
     for p in nb.prange(Np):
         dz = dz_vec[p]
@@ -44,20 +47,25 @@ def compute_evanescent(dz_vec, dx_vec, k0_vec,
         phase_plus = np.empty(Nquad, dtype=np.complex128)
 
         for q in range(Nquad):
-            phase_min[q]  = dz * sinh_psi[q] - 1j * dx * cosh_psi[q]
+            phase_min[q] = dz * sinh_psi[q] - 1j * dx * cosh_psi[q]
             phase_plus[q] = dz * sinh_psi[q] + 1j * dx * cosh_psi[q]
         # Loop over frequencies
         for w in range(Nw):
             k0 = k0_vec[w]
             s = 0.0 + 0.0j
             for q in range(Nquad):
-                val = (
-                    np.exp(-k0 * phase_min[q])
-                    + np.exp(-k0 * phase_plus[q])
-                ) * rmap_evan[w, q] * weights_ev[q]
-                s += val
-            acc_evan[p, w] = scaling * s
-    return acc_evan
+                exp_min = np.exp(-k0 * phase_min[q])
+                exp_plus = np.exp(-k0 * phase_plus[q])
+                kernel = scaling * (exp_min + exp_plus) * weights_ev[q]
+                kernel_evan[p, w, q] = kernel # store kernel for adjoint
+                s += kernel * rmap_evan[w, q]
+                #val = (
+                #    np.exp(-k0 * phase_min[q])
+                #    + np.exp(-k0 * phase_plus[q])
+                #) * rmap_evan[w, q] * weights_ev[q]
+                #s += val
+            acc_evan[p, w] = s #scaling * s
+    return acc_evan, kernel_evan
 
 def get_integrand_evan_param(kx_max_factor, nevan):
     psi_max = np.arccosh(kx_max_factor)
@@ -74,17 +82,21 @@ def compute_prop(dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, rmap):
     Np = dz_vec.size
     Nw = k0_vec.size
     Ntheta_eval = len(Vinv)*(len(thetas)-1)
+
     acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
+    weights_prop = np.zeros((Np, Nw, Ntheta_eval), dtype=np.complex128)
+
     for p in nb.prange(Np):
         weights = np.zeros((Nw, Ntheta_eval), dtype=np.complex128)
         weights = get_weights_filon_numba(k0_vec, dz_vec[p], dx_vec[p], thetas, Vinv, global_idx, weights)
-        # acc_prop[p, :] = np.sum(weights * rmap, axis=1) # Rmap of size # (Nw, Nquad)
+        weights_prop[p, :, :] = weights # store weights for adjoint
         for w in range(Nw):
             s = 0.0 + 0.0j
             for q in range(Ntheta_eval):
                 s += weights[w, q] * rmap[w, q]
             acc_prop[p, w] = s
-    return acc_prop
+    return acc_prop, weights_prop
+
 
 def Sommerfeld_integral2D(
     layers,
@@ -135,16 +147,23 @@ def Sommerfeld_integral2D(
     k0_vec = omega / vp[0]
     dz_vec = np.full_like(dx_vec, dz_refl)
 
-    acc_prop = compute_prop(
+    acc_prop, weights_prop = compute_prop(
         dz_vec, dx_vec, k0_vec, thetas, Vinv, global_idx, R_prop
     )
-    acc_evan = compute_evanescent(
+    acc_evan, kernel_evan = compute_evanescent(
         dz_vec, dx_vec, k0_vec, sinh_psi, cosh_psi,
         R_evan, weights_ev, scaling
     )
 
+    cache = {
+        "weights_prop": weights_prop,
+        "kernel_evan": kernel_evan,
+        "p_prop": p,
+        "p_evan": ph,
+    }
+
     int_total = -(acc_evan+1j*acc_prop) / (4.*np.pi)
     res_pairs = int_total.reshape((Ns, Nr, Nw))
 
-    return res_pairs
+    return res_pairs, cache
 

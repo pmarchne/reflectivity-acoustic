@@ -2,61 +2,74 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass
+@dataclass(frozen=True)
 class Layer:
-    """
-    Represents a geological layer with physical properties.
-    Attributes:
-        h: thickness [m]
-        vp: P-wave velocity [m/s]
-        rho: density [kg/m^3]
-    """
     h: float
     vp: float
     rho: float
 
     def __getitem__(self, index):
         return (self.h, self.vp, self.rho)[index]
-    
+
     def __iter__(self):
-        """Allow unpacking: h, vp, rho = layer"""
         return iter((self.h, self.vp, self.rho))
 
     def __repr__(self):
         return f"Layer(h={self.h:.1f}, vp={self.vp:.1f}, rho={self.rho:.1f})"
 
 
+def interfaces_to_widths(z_interfaces):
+    """
+    Convert interface depths to layer thicknesses.
+
+    Example:
+        z_interfaces = [0, 100, 200, 350]
+        widths = [100, 100, 150]
+    """
+    z_interfaces = np.asarray(z_interfaces, dtype=float)
+
+    if z_interfaces.ndim != 1:
+        raise ValueError("z_interfaces must be a 1D array")
+    if len(z_interfaces) < 2:
+        raise ValueError("z_interfaces must contain at least two values")
+    if np.any(np.diff(z_interfaces) <= 0):
+        raise ValueError("z_interfaces must be strictly increasing")
+
+    return np.diff(z_interfaces)
+
+
 def create_layers(hs, vps, rhos):
     """
-    Create a list of Layer objects from arrays.
-
-    Args:
-        hs: array of thicknesses
-        vps: array of P-wave velocities
-        rhos: array of densities
-
-    Returns:
-        list of Layer objects
+    Create list of Layer from arrays of thicknesses, velocities, densities.
     """
-    hs = np.asarray(hs)
-    vps = np.asarray(vps)
-    rhos = np.asarray(rhos)
+    hs = np.asarray(hs, dtype=float)
+    vps = np.asarray(vps, dtype=float)
+    rhos = np.asarray(rhos, dtype=float)
 
-    if not len(hs) == len(vps) == len(rhos):
-        raise ValueError("All arrays must have the same length")
+    if not (len(hs) == len(vps) == len(rhos)):
+        raise ValueError("hs, vps, rhos must have the same length")
 
     return [Layer(h, vp, rho) for h, vp, rho in zip(hs, vps, rhos)]
 
 
+def create_layers_from_interfaces(z_interfaces, vps, rhos):
+    """
+    Build layers from interface depths and property arrays.
+    z_interfaces must have length len(vps) + 1.
+    """
+    widths = interfaces_to_widths(z_interfaces)
+    vps = np.asarray(vps, dtype=float)
+    rhos = np.asarray(rhos, dtype=float)
+
+    if not (len(widths) == len(vps) == len(rhos)):
+        raise ValueError("Need len(z_interfaces)=len(vps)+1 and matching rhos")
+
+    return create_layers(widths, vps, rhos)
+
+
 def to_arrays(layers):
     """
-    Convert a list of Layer objects to NumPy arrays.
-
-    Args:
-        layers: list of Layer objects or tuples
-
-    Returns:
-        tuple of (hs, vps, rhos) as NumPy arrays
+    Convert a list of Layer objects or tuples to arrays: (hs, vps, rhos).
     """
     hs, vps, rhos = [], [], []
 
@@ -69,29 +82,24 @@ def to_arrays(layers):
         vps.append(vp)
         rhos.append(rho)
 
-    return np.array(hs), np.array(vps), np.array(rhos)
+    out = (
+        np.array(hs, dtype=float),
+        np.array(vps, dtype=float),
+        np.array(rhos, dtype=float),
+    )
+    return out
 
 
 def update_layer(layers, index, h=None, vp=None, rho=None):
     """
-    Update specific parameters of a layer at given index.
-
-    Args:
-        layers: list of Layer objects
-        index: index of layer to update
-        h: new thickness (optional)
-        vp: new P-wave velocity (optional)
-        rho: new density (optional)
-
-    Returns:
-        updated list of layers
+    Update one layer at a given index and return a new list.
     """
-    layers = list(layers)  # Create a copy
+    layers = list(layers)
     layer = layers[index]
 
-    new_h = h if h is not None else layer.h
-    new_vp = vp if vp is not None else layer.vp
-    new_rho = rho if rho is not None else layer.rho
+    new_h = layer.h if h is None else h
+    new_vp = layer.vp if vp is None else vp
+    new_rho = layer.rho if rho is None else rho
 
     layers[index] = Layer(new_h, new_vp, new_rho)
     return layers
@@ -99,62 +107,12 @@ def update_layer(layers, index, h=None, vp=None, rho=None):
 
 def update_from_arrays(layers, hs=None, vps=None, rhos=None):
     """
-    Update layers from modified arrays.
-
-    Args:
-        layers: list of Layer objects
-        hs: updated thickness array (optional)
-        vps: updated velocity array (optional)
-        rhos: updated density array (optional)
-
-    Returns:
-        updated list of layers
+    Update all layers from optional arrays.
     """
-    # Get current arrays
     curr_hs, curr_vps, curr_rhos = to_arrays(layers)
 
-    # Use updated arrays or keep current
-    new_hs = hs if hs is not None else curr_hs
-    new_vps = vps if vps is not None else curr_vps
-    new_rhos = rhos if rhos is not None else curr_rhos
+    new_hs = curr_hs if hs is None else hs
+    new_vps = curr_vps if vps is None else vps
+    new_rhos = curr_rhos if rhos is None else rhos
 
     return create_layers(new_hs, new_vps, new_rhos)
-
-
-if __name__ == "__main__":
-    print("=== Create layers from arrays ===")
-    vps = np.array([1500., 2800., 3800., 2300., 6500.])
-    hs = np.array([300.0, 350.0, 420.0, 620.0, 650.0])
-    rhos = np.array([2000.0, 2000.0, 2000.0, 2000.0, 2000.0])
-
-    layers = create_layers(hs, vps, rhos)
-    print("Created layers:")
-    for i, layer in enumerate(layers):
-        print(f"  Layer {i}: {layer}")
-
-    print("\n=== Convert back to arrays ===")
-    h_arr, vp_arr, rho_arr = to_arrays(layers)
-    print(f"h:   {h_arr}")
-    print(f"vp:  {vp_arr}")
-    print(f"rho: {rho_arr}")
-
-    print("\n=== Update single layer ===")
-    layers = update_layer(layers, index=1, vp=3500.)
-    print(f"Updated layer 1: {layers[1]}")
-
-    print("\n=== Update from modified arrays ===")
-    vps[1] = 3650.
-    vps[2] = 4500.
-    layers = update_from_arrays(layers, vps=vps)
-    print("Updated layers:")
-    for i, layer in enumerate(layers):
-        print(f"  Layer {i}: {layer}")
-
-    print("\n=== Mixed usage ===")
-    mixed_layers = [
-        Layer(100.0, 1505.0, 2000.0),
-        (200.0, 1613.0, 2000.0),  # tuple also works
-        Layer(250.0, 1749.0, 2000.0),
-    ]
-    h, vp, rho = to_arrays(mixed_layers)
-    print(f"From mixed input - vp: {vp}")

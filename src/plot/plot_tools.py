@@ -181,8 +181,8 @@ def plot_seismogram(seismogram, xrecvs, time, vmin=-0.06, vmax=0.06, cmap='seism
     ax.set_xlabel('Receiver position [m]')
     ax.set_ylabel('Time [s]')
     ax.set_title('Seismogram')
-    #plt.tight_layout()
-    #plt.show()
+    plt.tight_layout()
+    plt.show()
 
 
 def plot_wiggle_traces(seismogram, xrecvs, time, trace_step=5, scale=1.0, figsize=(10, 8)):

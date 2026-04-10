@@ -1,6 +1,6 @@
 import numpy as np
-from src.parameters import Parameters
-from src.acquisition import Acquisition
+from src.config import Config
+from src.builders import build_problem
 from src.utilities import (
     source_frequency,
     inverse_fft_signal,
@@ -11,10 +11,8 @@ from src.quadrature.filon_Sommerfeld import Sommerfeld_integral2D
 
 
 def forward(layers,
-            acq: Acquisition,
-            param: Parameters,
-            free_surface=False,
-            nq_prop=1024, timing=False):
+            config: Config,
+            timing=False):
     """
     Forward modeling to compute predicted data d_cal
     using the reflectivity method.
@@ -27,41 +25,40 @@ def forward(layers,
     Returns:
         d_cal: array (Ns, Nr, nt) of predicted time-domain traces
     """
-
+    param, acq = build_problem(config)
     # 1. generate frequency domain array and source wavelet
-    source_freq, omegas = source_frequency(param)
+    source_freq, omegas = source_frequency(param, config)
     # 2. quadrature in spatial Fourier domain (incidence angles)
     with timer("Sommerfeld quadrature", timing):
-        green_multi = Sommerfeld_integral2D(
+        green_multi, cache = Sommerfeld_integral2D(
             layers, omegas, acq,
-            nq_prop, Nevan=128, kx_max_factor=4., free_surface=free_surface)
+            config.nq_prop, config.nq_evan,
+            kx_max_factor=4., free_surface=config.free_surface)
 
     # flatten for all source-receiver pairs
     Ns, Nr, Nw = green_multi.shape
     green_multi = green_multi.reshape((Ns*Nr, Nw))
 
     # 3. add Green function in homogeneous medium (top layer)
-    dist_direct = acq.get_distances()
-    if not free_surface:
+    dist_direct = acq.distances_direct()
+    if not config.free_surface:
         green_multi += green2d(omegas, layers[0][1], dist_direct)
     else:
-        # Calculate distances for the direct surface ghost
-        dx_mat = np.abs(acq.xs[:, None] - acq.xr[None, :])
-        dz_ghost_mat = acq.zs[:, None] + acq.zr[None, :]
-        dist_ghost = np.sqrt(dx_mat**2 + dz_ghost_mat**2).ravel()
-        
+        dist_ghost = acq.distances_ghost()
         # Add primary direct wave, subtract the phase-flipped direct ghost
         green_multi += green2d(omegas, layers[0][1], dist_direct)
         green_multi -= green2d(omegas, layers[0][1], dist_ghost)
 
     # reverse seismic source delay back to t=0 sec
-    #green_multi *= np.exp(-1j * 0.75*delay * omegas)[None, :]
+    # green_multi *= np.exp(-1j * 0.75*delay * omegas)[None, :]
 
     # 4. convolution with source in the frequency domain
     response = green_multi * source_freq[None, :]
-    response *= 1j*np.real(omegas) # ricker source time-derivative !
+    
+    if config.source_deriv:
+        response *= 1j*np.real(omegas)  # ricker source time-derivative !
 
     # 5. Inverse FFT to go back in time
-    d_cal = inverse_fft_signal(response, param)
+    d_cal = inverse_fft_signal(response, param, config)
 
-    return d_cal.reshape((Ns, Nr, param.nt))
+    return d_cal.reshape((Ns, Nr, param.nt)), cache

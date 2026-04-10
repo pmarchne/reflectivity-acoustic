@@ -1,12 +1,12 @@
 import numpy as np
-from reflectivity_benchmark import numpy_reflectivity_p
+from src.fortran.reflectivity_benchmark import numpy_reflectivity_p
 from src.utilities import timer
 
 try:
     import src.fortran.reflectivity_adj as reflectivity_adj
     FORTRAN_AVAILABLE = True
     rfadjmod = reflectivity_adj.reflectivity_adj_mod
-    print(rfadjmod.compute_reflectivity_adj.__doc__)
+    #print(rfadjmod.compute_reflectivity_adj.__doc__)
 except Exception as e:
     print("Fortran module not available:", e)
     FORTRAN_AVAILABLE = False
