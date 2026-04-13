@@ -53,5 +53,8 @@ In addition, we can set a free surface condition at $z = 0$, which corresponds t
 1. Mallick, S., & Frazer, L. N. (1987). Practical aspects of reflectivity modeling. Geophysics, 52(10), 1355-1364.
 2. Muller, G. (1985). The reflectivity method: a tutorial. Journal of Geophysics, 58(1), 153-174.
 
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
   
 

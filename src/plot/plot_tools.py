@@ -105,7 +105,7 @@ def get_param_label(param):
     return labels.get(param, param)
 
 from matplotlib.colors import Normalize
-def plot_layered_config(layers, xrecvs=None, xs=None, param='vp', cmap='cividis'):
+def plot_layered_config(layers, xrecvs=None, zrecvs=None, xs=None, param='vp', cmap='cividis'):
     """
     Plot a 2D x-z cross-section of layered model showing velocity or density.
     """
@@ -139,12 +139,10 @@ def plot_layered_config(layers, xrecvs=None, xs=None, param='vp', cmap='cividis'
         ax.fill_between([0., x_max], z_top, z_bottom, 
                         color=color, edgecolor='black', linewidth=0.5)
 
-    for inds, _ in enumerate(xs):
-        ax.plot(xs[inds][0], xs[inds][1], "ro", markersize=8)
-
     for indr, _ in enumerate(xrecvs):
-        ax.plot(xrecvs[indr], xs[0][1], "gx")
+        ax.plot(xrecvs[indr], zrecvs, "gx")
 
+    ax.plot(xs[0], xs[1], "ro", markersize=8)
     # Set labels and limits
     ax.set_xlabel('x (m)')
     ax.set_ylabel('Depth (m)')

@@ -9,4 +9,3 @@ class Parameters:
     nfft: int
     time: np.ndarray
     omegas: np.ndarray
-    source_freq: np.ndarray | None = None
