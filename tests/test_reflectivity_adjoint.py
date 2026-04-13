@@ -4,17 +4,15 @@ from src.utilities import timer
 from src.fortran.reflectivity_adjoint import (fortran_reflectivity_adj,
                                               reflectivity_p_adj,
                                               gradient_check)
-from src.forward import forward
-from src.builders import build_problem
+from src.forward import ForwardSimulation
 from src.config import Config
 from src.layers import (
     update_from_arrays,
     create_layers_from_interfaces,
     to_arrays
     )
-from src.utilities import source_frequency
 from src.misfit import fd_gradient_vp
-from src.adjoint import compute_gradient
+from src.reverse import ReverseSimulation
 
 
 def test_adj_reflectivity_benchmark():
@@ -103,26 +101,24 @@ def test_fd_reflectivity(layered_model):
         epsilon=1.5,
         free_surface=True,
     )
-    param, _ = build_problem(config)
+    rev_sim = ReverseSimulation(config)
+    fwd_sim = ForwardSimulation(config)
     layers = layered_model
-    d_clean, _ = forward(layers, config, timing=False)
+    d_clean, _ = fwd_sim.run(layers, timing=False)
     # Perturbed model
     vp_new = np.array([1505.0, 1643.0, 2749.0,
                        2219.0, 3400.0, 2900.0,
                        2065.0, 4281.0], dtype=float)
     layers_new = update_from_arrays(layers, vps=vp_new)
-    d_new, cache_new = forward(layers_new, config, timing=False)
+    d_new, cache_new = fwd_sim.run(layers_new, timing=False)
 
     residual = d_new - d_clean
     residual = residual[0]  # keep 1st source - forward returns [nsrc,nrec,nt]
-    source_freq = source_frequency(param, config)
 
-    # Adjoint
-    grad_vp, grad_rho = compute_gradient(
+    # Adjoint via ReverseSimulation
+    grad_vp, grad_rho = rev_sim.run(
         residual=residual,
         layers=layers_new,
-        source_freq=source_freq,
-        config=config,
         cache=cache_new,
     )
 
@@ -132,7 +128,7 @@ def test_fd_reflectivity(layered_model):
         vp_new,
         rho,
         z_interfaces,
-        config,
+        fwd_sim,
         d_clean[0],
         1.0,
         eps=1e-3
@@ -148,15 +144,13 @@ def test_fd_reflectivity(layered_model):
         layers_p = create_layers_from_interfaces(
             z_interfaces, vp_perturbed, rho
             )
-        d_p, _ = forward(layers_p, config, timing=False)
+        d_p, _ = fwd_sim.run(layers_p, timing=False)
         return (d_p[0] - d_new[0]) / eps
 
     def J_adjoint(r):
-        gvp, _ = compute_gradient(
+        gvp, _ = rev_sim.run(
             residual=r,
             layers=layers_new,
-            source_freq=source_freq,
-            config=config,
             cache=cache_new,
         )
         return gvp

@@ -7,21 +7,35 @@ from src.kernels import green2d
 from src.quadrature.filon_Sommerfeld import Sommerfeld_integral2D
 
 
-def forward(layers, config: Config, timing: bool = False):
+class ForwardSimulation:
     """
-    Forward modeling to compute predicted data d_cal using the reflectivity method.
+    Bundles a fixed Config with its pre-built Parameters and Acquisition.
 
-    Args:
-        layers: list of Layer objects (or tuples of (thickness, vp, rho))
-        config: Config object with all modeling parameters
-        timing: if True, print elapsed time for the Sommerfeld quadrature step
-    Returns:
-        d_cal: array (Ns, Nr, nt) of predicted time-domain traces
-        cache: dict of intermediate arrays used by the adjoint
+    Build once, call run(layers) as many times as needed.
+    This is the preferred pattern for inversion loops where the
+    acquisition geometry and numerical parameters are fixed.
+
     """
-    param, acq = build_problem(config)
 
-    # 1. Generate source wavelet in the frequency domain
+    def __init__(self, config: Config):
+        self.config = config
+        self.param, self.acq = build_problem(config)
+
+    def run(self, layers, timing: bool = False) -> tuple[np.ndarray, dict]:
+        """Run the forward model for the given earth model.
+
+        Returns:
+            d_cal : (Ns, Nr, nt) time-domain seismogram
+            cache : intermediate arrays needed by the adjoint
+        """
+        return _run_forward(layers, self.config, self.param, self.acq, timing)
+
+
+def _run_forward(layers, config, param, acq, timing) -> tuple[np.ndarray, dict]:
+    """Core forward computation used by ForwardSimulation.run()."""
+    vp_top = layers[0][1]  # P-wave velocity of the top (water) layer
+
+    # 1. Source wavelet in the frequency domain
     source_freq = source_frequency(param, config)
 
     # 2. Sommerfeld integral over incidence angles
@@ -32,23 +46,20 @@ def forward(layers, config: Config, timing: bool = False):
             acq,
             config.nq_prop,
             config.nq_evan,
-            kx_max_factor=4.0,
+            kx_max_factor=config.kx_max_factor,
             free_surface=config.free_surface,
         )
 
-    # Flatten source-receiver pairs for vectorised operations
+    # Flatten source-receiver pairs for vectorized operations
     Ns, Nr, Nw = green_multi.shape
     green_multi = green_multi.reshape((Ns * Nr, Nw))
 
-    # 3. Add direct-wave Green's function in the homogeneous top layer
+    # 3. Add direct-wave Green's function; subtract free-surface ghost if needed
     dist_direct = acq.distances_direct()
-    if not config.free_surface:
-        green_multi += green2d(param.omegas, layers[0][1], dist_direct)
-    else:
+    green_multi += green2d(param.omegas, vp_top, dist_direct)
+    if config.free_surface:
         dist_ghost = acq.distances_ghost()
-        # Primary direct wave minus the phase-flipped free-surface ghost
-        green_multi += green2d(param.omegas, layers[0][1], dist_direct)
-        green_multi -= green2d(param.omegas, layers[0][1], dist_ghost)
+        green_multi -= green2d(param.omegas, vp_top, dist_ghost)
 
     # 4. Convolve with source wavelet in the frequency domain
     response = green_multi * source_freq[None, :]

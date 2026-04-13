@@ -4,10 +4,8 @@ import numpy as np
 import pytest
 
 from src.utilities import timer
-from src.fortran.reflectivity_benchmark import (reflectivity_q,
-                                                fortran_reflectivity
-                                                )
-from src.forward import forward
+from src.fortran.reflectivity_benchmark import reflectivity_q, fortran_reflectivity
+from src.forward import ForwardSimulation
 
 
 def test_reflectivity_benchmark():
@@ -55,10 +53,12 @@ def test_fd_reflectivity(param_fd, config_fd, layered_model):
 
     time_ref = np.linspace(0.0, config_fd.total_time, nt_ref)
 
-    # warm-up
-    _, _ = forward(layered_model, config_fd, timing=False)
+    sim = ForwardSimulation(config_fd)
 
-    d_cal, _ = forward(layered_model, config_fd, timing=True)
+    # warm-up
+    sim.run(layered_model, timing=False)
+
+    d_cal, _ = sim.run(layered_model, timing=True)
 
     # expected shape: (Ns, Nr, Nt)
     ref = d_cal[0]
@@ -70,9 +70,7 @@ def test_fd_reflectivity(param_fd, config_fd, layered_model):
 
     for i in range(nr):
         trace_ref = ref[i, :]
-        trace_ref_interp = np.interp(time_ref,
-                                     param_fd.time,
-                                     trace_ref)
+        trace_ref_interp = np.interp(time_ref, param_fd.time, trace_ref)
         trace_fd = seismo_fd[:, i]
         residual = trace_ref_interp - trace_fd
 

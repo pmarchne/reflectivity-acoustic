@@ -20,6 +20,7 @@ class Config:
     nq_prop: int = 256
     nq_evan: int = 128
     nfft_pad_factor: int = 2
+    kx_max_factor: float = 4.0
 
     # Physics
     free_surface: bool = True

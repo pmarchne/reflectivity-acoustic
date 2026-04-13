@@ -1,14 +1,44 @@
 import numpy as np
 import numba as nb
+from src.config import Config
 from src.builders import build_problem
-from src.utilities import adjoint_inverse_fft_signal, timer
+from src.utilities import adjoint_inverse_fft_signal, source_frequency
 from src.fortran.reflectivity_adjoint import fortran_reflectivity_adj
 
 
-def compute_gradient(residual, layers, source_freq, config, cache):
-    """Backpropagate residuals through the L2 misfit to obtain parameter gradients."""
-    param, _ = build_problem(config)
+class ReverseSimulation:
+    """
+    Bundles a fixed Config with its pre-built Parameters for the adjoint (reverse) simulation.
 
+    Build once, call run(residual, layers, cache) as many times as needed.
+    This is the preferred pattern for inversion loops where the
+    acquisition geometry and numerical parameters are fixed.
+    """
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.param, self.acq = build_problem(config)
+        self._source_freq = source_frequency(self.param, config)
+
+    def run(self, residual, layers, cache) -> tuple[np.ndarray, np.ndarray]:
+        """Backpropagate residuals through the L2 misfit to obtain parameter gradients.
+
+        Parameters:
+            residual    : (Nr, Nt) time-domain residual for one source
+            layers      : earth model (list of (z, vp, rho) tuples)
+            cache       : intermediate arrays returned by ForwardSimulation.run()
+
+        Returns:
+            grad_vp  : gradient w.r.t. P-wave velocity, shape (n_layers,)
+            grad_rho : gradient w.r.t. density, shape (n_layers,)
+        """
+        return _compute_gradient(
+            residual, layers, self._source_freq, self.config, self.param, cache
+        )
+
+
+def _compute_gradient(residual, layers, source_freq, config, param, cache):
+    """Core adjoint computation used by ReverseSimulation.run()."""
     # Adjoint FFT: residual shape (Nr, Nt) for one source
     adj_response = adjoint_inverse_fft_signal(residual, param, config)
     if config.source_deriv:

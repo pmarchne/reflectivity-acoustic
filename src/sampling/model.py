@@ -3,7 +3,7 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
 from src.layers import create_layers, to_arrays
-from src.forward import forward
+from src.forward import ForwardSimulation
 from src.misfit import l2_misfit
 
 
@@ -11,13 +11,17 @@ class FWILogPosterior:
     def __init__(self, dobs, layer, config, noise_std, prior_mean, prior_cov):
         self.dobs = dobs
         self.layer = layer
-        self.config = config
+        self.sim = ForwardSimulation(config)
         self.noise_std = noise_std
 
         self.mu = prior_mean
         self.cov = prior_cov
         self.chol = cho_factor(self.cov)
         self.inv_cov = cho_solve(self.chol, np.eye(len(self.mu)))
+
+    @property
+    def config(self):
+        return self.sim.config
 
     # ---------------------
     # Likelihood
@@ -26,9 +30,9 @@ class FWILogPosterior:
         hs, _, rhos = to_arrays(self.layer)
         vp = np.insert(vp, 0, 1500.0)
         layers_new = create_layers(hs=hs, vps=vp, rhos=rhos)
-        dcal, _ = forward(layers_new, self.config)
+        dcal, _ = self.sim.run(layers_new)
         misfit = l2_misfit(dcal[0], self.dobs, std_noise=self.noise_std)
-        misfit = misfit / (self.config.n_receivers)
+        misfit = misfit / self.sim.config.n_receivers
         return -misfit
 
     def grad_log_likelihood_fd(self, vp, eps=1e-3):
@@ -76,8 +80,8 @@ class FWILogPosterior:
                 VP[ind2] = ygrid[i, j]
                 VP = np.insert(VP, 0, 1500.0)
                 layers = create_layers(hs=hs, vps=VP, rhos=rhos)
-                dcal, _ = forward(layers, self.config)
+                dcal, _ = self.sim.run(layers)
                 COST[i, j] = l2_misfit(dcal[0], self.dobs, std_noise=self.noise_std)
         elapsed_time = time.time() - start_time
         print(f"generated misfit map in {elapsed_time:.3f} seconds.")
-        return -COST / self.config.n_receivers, xgrid, ygrid
+        return -COST / self.sim.config.n_receivers, xgrid, ygrid

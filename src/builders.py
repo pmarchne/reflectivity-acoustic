@@ -1,7 +1,7 @@
 import numpy as np
-from .config import Config
-from .parameters import Parameters
-from .acquisition import Acquisition
+from src.config import Config
+from src.parameters import Parameters
+from src.acquisition import Acquisition
 
 
 def build_parameters(config: Config) -> Parameters:

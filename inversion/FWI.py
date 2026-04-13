@@ -1,31 +1,27 @@
 import numpy as np
 from scipy.optimize import minimize
 from src.config import Config
-from src.builders import build_problem
 from src.layers import create_layers_from_interfaces, update_layer_slice
-from src.forward import forward
+from src.forward import ForwardSimulation
 from src.misfit import l2_misfit
-from src.adjoint import compute_gradient
-from src.utilities import source_frequency
+from src.reverse import ReverseSimulation
 
 
-def make_fwi_objective(d_obs, layers, config, source_freq, cost_history):
+def make_fwi_objective(d_obs, layers, fwd_sim, rev_sim, cost_history):
     ''' define FWI objective function '''
     def fwi_objective(vp_vec):
         # Build model
         lay = update_layer_slice(layers, vp_slice=vp_vec, start=1)
         # Forward
-        d_cal, cache = forward(lay, config, timing=True)
+        d_cal, cache = fwd_sim.run(lay, timing=True)
         # Misfit
         residual = d_cal - d_obs
         phi = l2_misfit(d_cal, d_obs)
         print("current phi", phi)
-        # Adjoint gradient
-        grad_vp, _ = compute_gradient(
+        # Reverse: Adjoint gradient
+        grad_vp, _ = rev_sim.run(
             residual=residual[0],
             layers=lay,
-            source_freq=source_freq,
-            config=config,
             cache=cache,
         )
 
@@ -45,7 +41,8 @@ def FWI_scipy():
                     total_time=1.024, delay=0.2,
                     source_deriv=True, epsilon=1.5,
                     free_surface=True)
-    param, _ = build_problem(config)
+    fwd_sim = ForwardSimulation(config)
+    rev_sim = ReverseSimulation(config)
 
     # true model
     z_interfaces = np.array([0.0, 100.0, 250.0, 400.0, 700.0])
@@ -56,8 +53,7 @@ def FWI_scipy():
     layers = create_layers_from_interfaces(z_interfaces, vp_true, rho)
 
     # Observed data
-    source_freq = source_frequency(param, config)
-    d_obs, _ = forward(layers, config, timing=True)
+    d_obs, _ = fwd_sim.run(layers, timing=True)
 
     # initial model
     vp_init = np.array([3500.0, 3500.0, 3500.0])
@@ -66,8 +62,8 @@ def FWI_scipy():
     objective = make_fwi_objective(
         d_obs=d_obs,
         layers=layers,
-        config=config,
-        source_freq=source_freq,
+        fwd_sim=fwd_sim,
+        rev_sim=rev_sim,
         cost_history=cost_history,
     )
     # Run L-BFGS
