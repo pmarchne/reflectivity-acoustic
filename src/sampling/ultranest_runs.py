@@ -10,23 +10,24 @@ from src.noise import add_noise
 from src.sampling.model import FWILogPosterior
 from src.plot.plot_tools import plot_seismogram
 
-
 if __name__ == "__main__":
     config = Config()
 
-    vps_ref = np.array([1500., 1900., 2800., 3800., 2300., 5000.])
-    hs = np.array([150., 200., 250., 380., 440., 500.])
-    rhos = np.full_like(vps_ref, 2000.)
+    vps_ref = np.array([1500.0, 1900.0, 2800.0, 3800.0, 2300.0, 5000.0])
+    hs = np.array([150.0, 200.0, 250.0, 380.0, 440.0, 500.0])
+    rhos = np.full_like(vps_ref, 2000.0)
     layers = create_layers(hs, vps_ref, rhos)
 
     d_clean, _ = forward(layers, config)
     d_obs, std_noise = add_noise(d_clean, config.noise_level, seed=config.seed)
 
     _, acq = build_problem(config)
-    plot_seismogram(d_obs[0, :, :], acq.xr, build_problem(config)[0].time, vmin=-0.06, vmax=0.06)
+    plot_seismogram(
+        d_obs[0, :, :], acq.xr, build_problem(config)[0].time, vmin=-0.06, vmax=0.06
+    )
 
-    prior_mean = np.array([2000., 2500., 2500., 3000., 3000.])
-    sigma = np.array([1000., 1500., 1500., 1500., 1500.])
+    prior_mean = np.array([2000.0, 2500.0, 2500.0, 3000.0, 3000.0])
+    sigma = np.array([1000.0, 1500.0, 1500.0, 1500.0, 1500.0])
     prior_cov = np.diag(sigma**2)
 
     model = FWILogPosterior(
@@ -65,7 +66,7 @@ if __name__ == "__main__":
 
     print("log_likelihood(ref):", model.log_likelihood(vps_ref[1:]))
 
-    param_names = ['Vp^2', 'Vp^3', 'Vp^4', 'Vp^5', 'Vp^6']
+    param_names = ["Vp^2", "Vp^3", "Vp^4", "Vp^5", "Vp^6"]
     sampler = ultranest.ReactiveNestedSampler(
         param_names, ultranest_likelihood, ultranest_prior
     )
@@ -78,7 +79,7 @@ if __name__ == "__main__":
     )
     sampler.print_results()
 
-    filename = 'results_ultranest'
-    with open(filename + '.pkl', 'wb') as fp:
+    filename = "results_ultranest"
+    with open(filename + ".pkl", "wb") as fp:
         pickle.dump(result, fp)
         print("results saved!")

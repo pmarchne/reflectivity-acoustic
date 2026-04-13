@@ -6,6 +6,7 @@ from src.plot.plot_tools import plot_reflectivity
 # Attempt to import the compiled Fortran module
 try:
     import src.fortran.reflectivity as reflectivity
+
     FORTRAN_AVAILABLE = True
     rfmod = reflectivity.reflectivity_mod
 except Exception as e:
@@ -13,20 +14,11 @@ except Exception as e:
     FORTRAN_AVAILABLE = False
     rfmod = None
 
+
 # --- NumPy vectorized implementation ---
-def numpy_reflectivity_p(
-    layers,
-    omegas,
-    p,
-    free_surface=1,
-    zr=70.0,
-    zs=80.0
-):
+def numpy_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     # let complex model parameters for adjoint gradient check
-    h, vp, rho = map(
-        lambda x: np.asarray(x, dtype=np.complex128),
-        zip(*layers)
-    )
+    h, vp, rho = map(lambda x: np.asarray(x, dtype=np.complex128), zip(*layers))
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
     p2 = p**2
@@ -72,32 +64,34 @@ def numpy_reflectivity_p(
 
     return R
 
+
 def reflectivity_q(layers, omegas, p, **kwargs):
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
     R = numpy_reflectivity_p(layers, omegas, p, **kwargs)
     return R
 
+
 # --- helper to call Fortran reflectivity ---
-def fortran_reflectivity(layers, omegas, p, free_surface: bool = True, zr=70.0, zs=80.0):
+def fortran_reflectivity(
+    layers, omegas, p, free_surface: bool = True, zr=70.0, zs=80.0
+):
     if not FORTRAN_AVAILABLE:
         raise RuntimeError("Fortran module not compiled/importable")
     nw = omegas.size
     nq = p.size
 
-    h, vp, rho = map(
-        lambda x: np.asfortranarray(x, dtype=np.float64),
-        zip(*layers)
-    )
+    h, vp, rho = map(lambda x: np.asfortranarray(x, dtype=np.float64), zip(*layers))
     omegas = np.asfortranarray(omegas, dtype=np.complex128)
     p = np.asfortranarray(p, dtype=np.float64)
-    #print("Calling Fortran reflectivity module...")
-    #print(f"Layers: {h.size}, Frequencies: {nw}, q points: {nq}")
-    #t0 = time.time()
+    # print("Calling Fortran reflectivity module...")
+    # print(f"Layers: {h.size}, Frequencies: {nw}, q points: {nq}")
+    # t0 = time.time()
     R = rfmod.compute_reflectivity(h, vp, rho, omegas, p, free_surface, zr, zs)
-    #t1 = time.time()
-    #print("fortran elapsed: {:.3f}s, R shape {}".format(t1-t0, R.shape))
+    # t1 = time.time()
+    # print("fortran elapsed: {:.3f}s, R shape {}".format(t1-t0, R.shape))
     return R
+
 
 def benchmark():
     # Example model (small for quick testing; scale up to test perf)
@@ -110,17 +104,17 @@ def benchmark():
     freqs = np.linspace(0.1, 50.0, 1024, dtype=np.complex128)
     omegas = 2.0 * np.pi * freqs + 0.5 * 1j
     Ntheta = 6200
-    thetas = np.linspace(0., np.pi, Ntheta, dtype=np.float64)
+    thetas = np.linspace(0.0, np.pi, Ntheta, dtype=np.float64)
     p = np.sin(thetas) / layers[0][1]
 
     # warm-up
     print("warming up numpy implementation ...")
-    #R_np = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
-    R_np = reflectivity_q(layers, omegas, p, free_surface=1, zr=70., zs=80.)
+    # R_np = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
+    R_np = reflectivity_q(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
     if FORTRAN_AVAILABLE:
         print("warming up fortran implementation ...")
-        #R_f = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
-        R_f = fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70., zs=80.)
+        # R_f = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
+        R_f = fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
 
     # real benchmark
     print("\n ----- Benchmark ----- ")
@@ -128,7 +122,7 @@ def benchmark():
     t_np = 0.0
     for r in range(repeats):
         t0 = time.time()
-        R_np = reflectivity_q(layers, omegas, p, free_surface=1, zr=70., zs=80.)
+        R_np = reflectivity_q(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
         t1 = time.time()
         dt = t1 - t0
         print(f"numpy run {r+1}/{repeats} : {dt:.3f}s")
@@ -139,14 +133,20 @@ def benchmark():
         t_f = 0.0
         for r in range(repeats):
             t0 = time.time()
-            R_f = fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70., zs=80.)
+            R_f = fortran_reflectivity(
+                layers, omegas, p, free_surface=1, zr=70.0, zs=80.0
+            )
             t1 = time.time()
             dt = t1 - t0
             print(f"fortran run {r+1}/{repeats} : {dt:.3f}s")
             t_f += dt
         t_f /= repeats
 
-        print("\nAverage times (s): numpy {:.3f}  fortran {:.3f}  speedup {:.2f}x".format(t_np, t_f, t_np / t_f))
+        print(
+            "\nAverage times (s): numpy {:.3f}  fortran {:.3f}  speedup {:.2f}x".format(
+                t_np, t_f, t_np / t_f
+            )
+        )
     else:
         print("\nFortran module not available — only numpy timings shown.")
 
@@ -154,6 +154,7 @@ def benchmark():
     print(f"Max abs error between numpy and fortran: {err:.3e}")
     plot_reflectivity(omegas, thetas, R_np, omega_c=150.0)
     plot_reflectivity(omegas, thetas, R_f, omega_c=150.0)
+
 
 if __name__ == "__main__":
     benchmark()

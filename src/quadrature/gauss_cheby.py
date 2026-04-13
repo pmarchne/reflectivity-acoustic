@@ -11,12 +11,15 @@ from src.layers import to_arrays
 def integral_kx_quadrature_numba(
     layers,
     omega,
-    xs, zs, xr, zr,
+    xs,
+    zs,
+    xr,
+    zr,
     n_prop,
     n_evan,
     kx_max_factor=4.0,
     chunk=256,
-    fs=False
+    fs=False,
 ):
     """
     Numba-accelerated integral over kx for ALL source-receiver pairs.
@@ -33,7 +36,7 @@ def integral_kx_quadrature_numba(
     Ns, Nr = xs.size, xr.size
     r_mat = np.abs(xs[:, None] - xr[None, :])
 
-    dz_mat = np.abs(2*h[0] - zr[:, None] - zs[None, :])
+    dz_mat = np.abs(2 * h[0] - zr[:, None] - zs[None, :])
     dz_mat_plus = np.abs(zr[:, None] + zs[None, :])
     dz_mat_minus = np.abs(zr[:, None] - zs[None, :])
     r_vec = r_mat.ravel()
@@ -44,12 +47,12 @@ def integral_kx_quadrature_numba(
 
     # omegas
     omega = np.atleast_1d(omega)
-    nz_mask = (omega != 0.0)
+    nz_mask = omega != 0.0
     if not np.any(nz_mask):
         # return zeros with full Nw size if desired
         return np.zeros((Np, omega.size))
 
-    omega_act = omega[nz_mask]         # (Nwa,)
+    omega_act = omega[nz_mask]  # (Nwa,)
     Nwa = omega_act.size
 
     # quadrature nodes
@@ -59,7 +62,7 @@ def integral_kx_quadrature_numba(
     w_u_all = weights_cheb[nodes_cheb >= 0]
 
     alpha = float(kx_max_factor)
-    nodes_leg_scaled = (0.5 * (alpha - 1.0) * nodes_leg + 0.5 * (alpha + 1.0))
+    nodes_leg_scaled = 0.5 * (alpha - 1.0) * nodes_leg + 0.5 * (alpha + 1.0)
     w_leg_scaled = 0.5 * (alpha - 1.0) * weights_leg
 
     k0 = omega_act / vp[0]  # (Nwa,)
@@ -77,13 +80,30 @@ def integral_kx_quadrature_numba(
 
         # build kx_chunk and kz_chunk arrays with shape (Nwa, chunk)
         # kx = k0[:,None] * u_chunk[None,:]
-        kx_chunk = (k0[:, None] * u_chunk[None, :]) 
-        kz_chunk = (k0[:, None] * np.sqrt(np.clip(1.0 - u_chunk[None, :]**2, 0.0, None)))
+        kx_chunk = k0[:, None] * u_chunk[None, :]
+        kz_chunk = k0[:, None] * np.sqrt(
+            np.clip(1.0 - u_chunk[None, :] ** 2, 0.0, None)
+        )
 
         # reflectivity (numba core): expects kx_chunk as complex (Nwa,chunk)
-        R_chunk = _reflectivity_numba_core(h, vp, rho, omega_act, kx_chunk, 0., 0., False)
+        R_chunk = _reflectivity_numba_core(
+            h, vp, rho, omega_act, kx_chunk, 0.0, 0.0, False
+        )
         # call propagating accumulator (in-place add)
-        _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, hd, acc_prop, free_surface=fs)#, fs, zs, zr)
+        _accumulate_prop_numba(
+            k0,
+            kx_chunk,
+            kz_chunk,
+            R_chunk,
+            w_chunk,
+            r_vec,
+            dz_vec,
+            dz_plus,
+            dz_minus,
+            hd,
+            acc_prop,
+            free_surface=fs,
+        )  # , fs, zs, zr)
 
     # loop chunks for evanescent (q in [1,alpha])
     n_leg = nodes_leg_scaled.size
@@ -92,25 +112,57 @@ def integral_kx_quadrature_numba(
         q_chunk = nodes_leg_scaled[i0:i1]
         w_chunk = w_leg_scaled[i0:i1]
 
-        kx_chunk = (k0[:, None] * q_chunk[None, :])
-        kz_chunk = (1j * k0[:, None] * np.sqrt(np.clip(q_chunk[None, :]**2 - 1., 0.0, None)))
+        kx_chunk = k0[:, None] * q_chunk[None, :]
+        kz_chunk = (
+            1j * k0[:, None] * np.sqrt(np.clip(q_chunk[None, :] ** 2 - 1.0, 0.0, None))
+        )
 
-        R_chunk = _reflectivity_numba_core(h, vp, rho, omega_act, kx_chunk, 0., 0., False)
+        R_chunk = _reflectivity_numba_core(
+            h, vp, rho, omega_act, kx_chunk, 0.0, 0.0, False
+        )
         # pass jacobian as vector of ones if weights already scaled
-        _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, hd, acc_evan, k0, free_surface=fs)
+        _accumulate_evan_numba(
+            k0,
+            kx_chunk,
+            kz_chunk,
+            R_chunk,
+            w_chunk,
+            r_vec,
+            dz_vec,
+            dz_plus,
+            dz_minus,
+            hd,
+            acc_evan,
+            k0,
+            free_surface=fs,
+        )
 
-    acc_total = acc_prop + acc_evan 
+    acc_total = acc_prop + acc_evan
     acc_total *= -1j / (2.0 * np.pi)
     # reconstruct full omega size with zeros for omega==0
     res_flat = np.zeros((Np, omega.size), dtype=np.complex128)
     res_flat[:, nz_mask] = acc_total
     # reshape to (Ns, Nr, Nw) if desired by caller, or return flattened (Np,Nw)
     res_pairs = res_flat.reshape((Ns, Nr, omega.size))
-    return res_pairs   # shape (Ns, Nr, Nw)
+    return res_pairs  # shape (Ns, Nr, Nw)
+
 
 # ---------- Numba accumulator for propagating part ----------
 @njit(parallel=True, fastmath=True)
-def _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, h, out_acc, free_surface):
+def _accumulate_prop_numba(
+    k0,
+    kx_chunk,
+    kz_chunk,
+    R_chunk,
+    w_chunk,
+    r_vec,
+    dz_vec,
+    dz_plus,
+    dz_minus,
+    h,
+    out_acc,
+    free_surface,
+):
     """
     Accumulate propagating integral for one chunk.
     k0: (Nwa,) real
@@ -138,22 +190,37 @@ def _accumulate_prop_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_v
                 kx = kx_row[j]
                 kz = kz_row[j]
                 Rv = R_row[j]
-                    
+
                 # compute integrand: exp(i kz dz) * cos(kx*r) * R
                 term_direct = np.exp(1j * kz * dzm) * np.cos(kx * r)
                 val = np.exp(1j * kz * dz) * np.cos(kx * r) * Rv + term_direct
-                
+
                 if free_surface:
                     Rfs = -1.0  # pressure release boundary
                     val = val + np.exp(1j * kz * dzp) * np.cos(kx * r) * Rfs
                     val = val / (1.0 - Rfs * Rv * np.exp(1j * 2.0 * kz * h))
                 val -= term_direct
                 acc += (val) * w_chunk[j]
-            out_acc[p, iw] += acc #/ k0[iw]
+            out_acc[p, iw] += acc  # / k0[iw]
+
 
 # ---------- Numba accumulator for evanescent part ----------
 @njit(parallel=True, fastmath=True)
-def _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_vec, dz_plus, dz_minus, h, out_acc, jacobian_freq, free_surface):
+def _accumulate_evan_numba(
+    k0,
+    kx_chunk,
+    kz_chunk,
+    R_chunk,
+    w_chunk,
+    r_vec,
+    dz_vec,
+    dz_plus,
+    dz_minus,
+    h,
+    out_acc,
+    jacobian_freq,
+    free_surface,
+):
     """
     Accumulate evanescent integral for one chunk.
     jacobian_chunk: (chunk,) real factor associated to each kx sample (may include k0 factor if needed)
@@ -179,67 +246,83 @@ def _accumulate_evan_numba(k0, kx_chunk, kz_chunk, R_chunk, w_chunk, r_vec, dz_v
                 Rv = R_row[j]
 
                 term_direct = (1.0 / kz) * np.exp(1j * kz * dzm) * np.cos(kx * r)
-                val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(kx * r) * Rv + term_direct
+                val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(
+                    kx * r
+                ) * Rv + term_direct
 
                 if free_surface:
                     Rfs = -1.0  # pressure release boundary
-                    val = val + np.exp(1j * kz * dzp) * np.cos(kx * r) * Rfs * (1.0 / kz)
+                    val = val + np.exp(1j * kz * dzp) * np.cos(kx * r) * Rfs * (
+                        1.0 / kz
+                    )
                     val = val / (1.0 - Rfs * Rv * np.exp(1j * 2.0 * kz * h))
                 val -= term_direct
                 acc += (val) * w_chunk[j]
 
-               # val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(kx * r) * Rv
-               # acc += val * w_chunk[j]
-                
+            # val = (1.0 / kz) * np.exp(1j * kz * dz) * np.cos(kx * r) * Rv
+            # acc += val * w_chunk[j]
+
             out_acc[p, iw] += acc * jacobian_freq[iw]
-    
+
+
 if __name__ == "__main__":
-    #layers = [
+    # layers = [
     #    (100.0, 1500.0, 1800.0),
     #    (250.0, 1900.0, 2000.0),
     #    (350.0, 1700.0, 2200.0),
     #    (500.0, 2000.0, 2400.0),
-    #]
+    # ]
 
     import time
     import matplotlib.pyplot as plt
     from src.kernels import green2d
-    vp = 2000.
+
+    vp = 2000.0
     layers = [(100.0, vp, 1000.0)]
     freqs = np.linspace(0.1, 100.0, 1024)
     omega = 2.0 * np.pi * freqs
 
-    xs = 20.
-    zs = 0.
-    xr = 800.
-    zr = 0.
+    xs = 20.0
+    zs = 0.0
+    xr = 800.0
+    zr = 0.0
     n_prop = 1024
     n_evan = 64
 
-    start = time.time() # z_travel
+    start = time.time()  # z_travel
     G_quad = integral_kx_quadrature_numba(
-        layers, omega, xs, zs, xr, zr,
-        n_prop, n_evan, kx_max_factor=2.0, chunk=256, fs=False)
+        layers,
+        omega,
+        xs,
+        zs,
+        xr,
+        zr,
+        n_prop,
+        n_evan,
+        kx_max_factor=2.0,
+        chunk=256,
+        fs=False,
+    )
     end = time.time()
     print(f"kx quadrature elapsed: {end-start:.2f} s")
-    
-    Green = green2d(omega, vp, xr-xs) 
+
+    Green = green2d(omega, vp, xr - xs)
 
     plt.figure()
-    plt.plot(omega, np.real(Green), 'r--')
-    plt.plot(omega, np.real(G_quad[0, 0, :]), 'b:')
-    plt.xlabel('omega')
+    plt.plot(omega, np.real(Green), "r--")
+    plt.plot(omega, np.real(G_quad[0, 0, :]), "b:")
+    plt.xlabel("omega")
     plt.grid()
     plt.show()
 
     plt.figure()
-    plt.plot(omega, np.imag(Green), 'g--')
-    plt.plot(omega, np.imag(G_quad[0, 0, :]), 'b-.')
-    plt.xlabel('omega')
+    plt.plot(omega, np.imag(Green), "g--")
+    plt.plot(omega, np.imag(G_quad[0, 0, :]), "b-.")
+    plt.xlabel("omega")
     plt.grid()
     plt.show()
 
-    '''start = time.time()
+    """start = time.time()
     res = integral_kx_quadrature_numba(layers, omega, xs, zs, xr, zr, n_prop, n_evan)
     end = time.time()
     print(f"kx quadrature elapsed: {end-start:.2f} s")
@@ -252,4 +335,4 @@ if __name__ == "__main__":
     start = time.time()
     res = integral_kx_quadrature_numba(layers, omega, xs, zs, xr, zr, n_prop, n_evan)
     end = time.time()
-    print(f"kx quadrature elapsed: {end-start:.2f} s")'''
+    print(f"kx quadrature elapsed: {end-start:.2f} s")"""

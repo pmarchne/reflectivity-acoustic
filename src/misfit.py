@@ -33,4 +33,3 @@ def fd_gradient_vp(vp, rho, z_interfaces, config, dobs, std_noise, eps=1e-3):
         grad[i] = (phi_p - phi_m) / (2 * eps)
 
     return grad
-

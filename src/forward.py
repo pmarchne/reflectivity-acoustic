@@ -27,9 +27,13 @@ def forward(layers, config: Config, timing: bool = False):
     # 2. Sommerfeld integral over incidence angles
     with timer("Sommerfeld quadrature", timing):
         green_multi, cache = Sommerfeld_integral2D(
-            layers, param.omegas, acq,
-            config.nq_prop, config.nq_evan,
-            kx_max_factor=4.0, free_surface=config.free_surface,
+            layers,
+            param.omegas,
+            acq,
+            config.nq_prop,
+            config.nq_evan,
+            kx_max_factor=4.0,
+            free_surface=config.free_surface,
         )
 
     # Flatten source-receiver pairs for vectorised operations

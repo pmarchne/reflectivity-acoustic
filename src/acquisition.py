@@ -3,6 +3,7 @@ import numpy as np
 
 class Acquisition:
     """Acquisition geometry: sources and receivers."""
+
     def __init__(self, sources=None, receivers=None):
         self.sources = self._to_points_array(sources)
         self.receivers = self._to_points_array(receivers)

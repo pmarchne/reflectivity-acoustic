@@ -128,12 +128,7 @@ def update_from_arrays(layers, hs=None, vps=None, rhos=None):
 
 
 def update_layer_slice(
-    layers,
-    vp_slice=None,
-    hs_slice=None,
-    rho_slice=None,
-    start=0,
-    end=None
+    layers, vp_slice=None, hs_slice=None, rho_slice=None, start=0, end=None
 ):
     """
     Update slices of vp, hs, and/or rho in layers.

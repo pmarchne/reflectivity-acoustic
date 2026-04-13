@@ -3,6 +3,7 @@ import numba as nb
 
 from src.quadrature.filon import g, g_prime
 
+
 @nb.njit(fastmath=True)
 def integrand_prop(theta, k0, z_abs, x, R_func):
     """integrand: R(theta) * exp(i * k0 * g(theta))"""
