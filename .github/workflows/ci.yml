@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.10.12
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y gfortran build-essential
+
+      - name: Install numpy (needed for f2py)
+        run: pip install numpy
+
+      - name: Build Fortran extensions
+        run: |
+          chmod +x ./src/fortran/run.sh
+          cd src/fortran && ./run.sh
+
+      - name: Upload Fortran shared libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortran-libs
+          path: src/fortran/*.so
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    container:
+      image: python:3.10.12
+
+    env:
+      PYTHONPATH: "."
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Fortran runtime library
+        run: |
+          apt-get update
+          apt-get install -y libgfortran5
+
+      - name: Download Fortran shared libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: fortran-libs
+          path: src/fortran/
+
+      - name: Upgrade pip and setuptools
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Install Python dependencies
+        run: pip install ".[dev]"
+
+      - name: Run tests
+        run: pytest -s
+
