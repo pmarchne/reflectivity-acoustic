@@ -21,7 +21,7 @@ def numpy_reflectivity_p_adj(
     zs=80.0,
 ):
     h, vp, rho = map(
-        lambda x: np.asarray(x, dtype=np.float64), 
+        lambda x: np.asarray(x, dtype=np.complex128), 
         zip(*layers)
     )
     omegas = np.asarray(omegas, dtype=np.complex128)
@@ -142,11 +142,11 @@ def numpy_reflectivity_p_adj(
 def reflectivity_p_adj(layers, omegas, p, **kwargs):
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
-    R, _, _ = numpy_reflectivity_p_adj(layers, omegas, p, **kwargs)
-    return R
+    R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(layers, omegas, p, **kwargs)
+    return R, dR_dvp, dR_drho
 
 def gradient_check(
-    layers, omegas, p, eps=1e-8, **kwargs
+    layers, omegas, p, eps=1e-8, print_info=False, **kwargs
 ):
     layers = np.asarray(layers, dtype=np.float64)
     z = layers[:, 0]
@@ -156,7 +156,7 @@ def gradient_check(
     R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(
         layers, omegas, p, **kwargs
     )
-
+    max_err_vp, max_err_rho = np.zeros_like(vp0), np.zeros_like(rho0)
     for ell in range(len(vp0)):
         vp_cs = vp0.astype(np.complex128)
         vp_cs[ell] += 1j * eps
@@ -165,7 +165,7 @@ def gradient_check(
             layers_cs, omegas, p, **kwargs
         )
         cs_vp = (R_cs - R) / (1j * eps)
-        max_err_vp = np.max(np.abs(cs_vp - dR_dvp[:, :, ell]))
+        max_err_vp[ell] = np.max(np.abs(cs_vp - dR_dvp[:, :, ell]))
 
         rho_cs = rho0.astype(np.complex128)
         rho_cs[ell] += 1j * eps
@@ -174,13 +174,15 @@ def gradient_check(
             layers_cs, omegas, p, **kwargs
         )
         cs_rho = (R_cs - R) / (1j * eps)
-        max_err_rho = np.max(np.abs(cs_rho - dR_drho[:, :, ell]))
+        max_err_rho[ell] = np.max(np.abs(cs_rho - dR_drho[:, :, ell]))
 
-        print(
-            f"layer {ell:2d} | "
-            f"vp max absolute err = {max_err_vp:.3e} | "
-            f"rho max absolute err = {max_err_rho:.3e}"
-        )
+        if print_info:
+            print(
+                f"layer {ell:d} | "
+                f"vp max absolute err = {max_err_vp[ell]:.3e} | "
+                f"rho max absolute err = {max_err_rho[ell]:.3e}"
+            )
+    return max_err_vp, max_err_rho
 
 def fortran_reflectivity_adj(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     if not FORTRAN_AVAILABLE:
@@ -204,7 +206,7 @@ def benchmark_adj():
 
     freqs = np.linspace(0.1, 50.0, 1024, dtype=np.float64)
     omegas = 2.0 * np.pi * freqs + 0.5 * 1j
-    thetas = np.linspace(0.01, 0.99*np.pi/2., 6200, dtype=np.float64)
+    thetas = np.linspace(0.01, 0.99*np.pi, 1200, dtype=np.float64)
     p = np.sin(thetas) / layers[0][1]
 
     fs, zs, zr = 1, 80.0, 70.0
@@ -249,8 +251,9 @@ def benchmark_adj():
     print("\n dR/dvp derivative value, per layer:", dR_dvp[50, 10, :])
     print("\n dR/drho derivative value, per layer:", dR_drho[50, 10, :])
 
-    gradient_check(layers, omegas, p, eps=1e-7,
-                   free_surface=fs, zr=zr, zs=zs)
+    max_err_vp, max_err_rho = gradient_check(layers, omegas, p, eps=1e-8, print_info=True, free_surface=fs, zr=zr, zs=zs)
+    print(max_err_rho)
+    print(max_err_vp)
 
 if __name__ == "__main__":
     benchmark_adj()

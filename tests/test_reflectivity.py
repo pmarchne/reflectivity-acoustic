@@ -23,7 +23,7 @@ def test_reflectivity_benchmark():
     thetas = np.linspace(0.0, np.pi, 2000, dtype=np.float64)
     p = np.sin(thetas) / layers[0][1]
 
-    repeats = 3
+    repeats = 5
     for r in range(repeats):
         with timer(f"numpy run {r + 1}: ", True):
             r_np = reflectivity_q(layers, omegas, p,

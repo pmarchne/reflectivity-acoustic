@@ -27,11 +27,11 @@ def forward(layers,
     """
     param, acq = build_problem(config)
     # 1. generate frequency domain array and source wavelet
-    source_freq, omegas = source_frequency(param, config)
+    source_freq = source_frequency(param, config)
     # 2. quadrature in spatial Fourier domain (incidence angles)
     with timer("Sommerfeld quadrature", timing):
         green_multi, cache = Sommerfeld_integral2D(
-            layers, omegas, acq,
+            layers, param.omegas, acq,
             config.nq_prop, config.nq_evan,
             kx_max_factor=4., free_surface=config.free_surface)
 
@@ -42,12 +42,12 @@ def forward(layers,
     # 3. add Green function in homogeneous medium (top layer)
     dist_direct = acq.distances_direct()
     if not config.free_surface:
-        green_multi += green2d(omegas, layers[0][1], dist_direct)
+        green_multi += green2d(param.omegas, layers[0][1], dist_direct)
     else:
         dist_ghost = acq.distances_ghost()
         # Add primary direct wave, subtract the phase-flipped direct ghost
-        green_multi += green2d(omegas, layers[0][1], dist_direct)
-        green_multi -= green2d(omegas, layers[0][1], dist_ghost)
+        green_multi += green2d(param.omegas, layers[0][1], dist_direct)
+        green_multi -= green2d(param.omegas, layers[0][1], dist_ghost)
 
     # reverse seismic source delay back to t=0 sec
     # green_multi *= np.exp(-1j * 0.75*delay * omegas)[None, :]
@@ -56,7 +56,7 @@ def forward(layers,
     response = green_multi * source_freq[None, :]
     
     if config.source_deriv:
-        response *= 1j*np.real(omegas)  # ricker source time-derivative !
+        response *= 1j*np.real(param.omegas)  # ricker source time-derivative !
 
     # 5. Inverse FFT to go back in time
     d_cal = inverse_fft_signal(response, param, config)

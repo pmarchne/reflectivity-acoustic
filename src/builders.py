@@ -23,7 +23,7 @@ def build_parameters(config: Config) -> Parameters:
         nt=nt,
         nfft=nfft,
         time=time,
-        omegas=omegas
+        omegas=omegas,
     )
 
 

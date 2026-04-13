@@ -42,35 +42,37 @@ def numpy_reflectivity_p(
     nk = p.size
 
     R = np.zeros((nw, nk), dtype=np.complex128)
+    inv_vp2 = 1.0 / (vp * vp)
 
     for iw, omega in enumerate(omegas):
         omega2 = omega * omega
 
+        kz = np.zeros((nlay, nk), dtype=np.complex128)
+        Z = np.zeros((nlay, nk), dtype=np.complex128)
+        Rstep = np.zeros((nlay, nk), dtype=np.complex128)
         Rval = np.zeros(nk, dtype=np.complex128)
 
-        kz_next = np.sqrt(omega2 * (1.0 / vp[-1]**2 - p2) + 0j)
-        kz_next = np.where(np.imag(kz_next) < 0, -kz_next, kz_next)
-        Z_next = omega * rho[-1] / kz_next
+        kz[-1] = np.sqrt(omega2 * (inv_vp2[-1] - p2) + 0j)
+        kz[-1] = np.where(np.imag(kz[-1]) < 0, -kz[-1], kz[-1])
+        Z[-1] = omega * rho[-1] / kz[-1]
+        Rstep[-1] = 0.0 + 0.0j
 
         for ell in range(nlay - 2, -1, -1):
-            kz_cur = np.sqrt(
-                omega2 * (1.0 / vp[ell]**2 - p2) + 0j
-            )
-            kz_cur = np.where(np.imag(kz_cur) < 0, -kz_cur, kz_cur)
+            kz[ell] = np.sqrt(omega2 * (inv_vp2[ell] - p2) + 0j)
+            kz[ell] = np.where(np.imag(kz[ell]) < 0, -kz[ell], kz[ell])
+            Z[ell] = omega * rho[ell] / kz[ell]
 
-            Z_cur = omega * rho[ell] / kz_cur
-            r = (Z_next - Z_cur) / (Z_next + Z_cur)
+            r = (Z[ell + 1] - Z[ell]) / (Z[ell + 1] + Z[ell])
+            phase = np.exp(2.0j * kz[ell + 1] * h[ell + 1])
+            D = 1.0 + r * Rstep[ell + 1] * phase
 
-            phase = np.exp(2j * kz_next * h[ell+1])
-            Rval = (r + Rval * phase) / (1.0 + r * Rval * phase)
-
-            kz_next = kz_cur
-            Z_next = Z_cur
-        
+            Rstep[ell] = (r + Rstep[ell + 1] * phase) / D
         if free_surface:
-            cavity = 1.0 / (1.0 + Rval * np.exp(2j * kz_next * h[0]))
-            ghost = -4.0 * np.sin(kz_next * zs) * np.sin(kz_next * zr)
-            Rval = cavity * Rval * ghost
+            cavity = 1.0 / (1.0 + Rstep[0] * np.exp(2.0j * kz[0] * h[0]))
+            ghost = -4.0 * np.sin(kz[0] * zs) * np.sin(kz[0] * zr)
+            Rval = cavity * Rstep[0] * ghost
+        else:
+            Rval = Rstep[0]
 
         R[iw] = Rval
 

@@ -8,8 +8,8 @@ from src.utilities import (
 
 
 def test_ricker_spectrum(param_small, config_small):
-    s_w, omegas = source_frequency(param_small, config_small)
-    freqs = omegas / (2.0 * np.pi)
+    s_w = source_frequency(param_small, config_small)
+    freqs = param_small.omegas / (2.0 * np.pi)
 
     exact = (
         (2.0 / np.sqrt(np.pi))
@@ -23,13 +23,9 @@ def test_ricker_spectrum(param_small, config_small):
 
 
 def test_inverse_fft_signal(param_fft, config_fft):
-    s_w, _ = source_frequency(param_fft, config_fft)
+    s_w = source_frequency(param_fft, config_fft)
     s_t = ricker_wavelet(param_fft.time, config_fft.f0, config_fft.delay)
-    #s_t_damped = s_t * np.exp(-config_fft.epsilon * param_fft.time)
-
     inv_time = inverse_fft_signal(s_w[None, :], param_fft, config_fft)
-    #s_w_back = adjoint_inverse_fft_signal(inv_time, param_fft, config_fft)
-
     np.testing.assert_allclose(inv_time[0], s_t, atol=1e-2, rtol=0.0)
 
 

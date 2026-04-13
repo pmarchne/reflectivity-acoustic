@@ -67,9 +67,13 @@ def create_layers_from_interfaces(z_interfaces, vps, rhos):
     return create_layers(widths, vps, rhos)
 
 
-def to_arrays(layers):
+def to_arrays(layers, return_interfaces=False):
     """
-    Convert a list of Layer objects or tuples to arrays: (hs, vps, rhos).
+    Convert a list of Layer objects or tuples to arrays.
+
+    Returns:
+        hs, vps, rhos
+        optionally also z_interfaces if return_interfaces=True
     """
     hs, vps, rhos = [], [], []
 
@@ -82,12 +86,17 @@ def to_arrays(layers):
         vps.append(vp)
         rhos.append(rho)
 
-    out = (
-        np.array(hs, dtype=float),
-        np.array(vps, dtype=float),
-        np.array(rhos, dtype=float),
-    )
-    return out
+    hs = np.asarray(hs, dtype=float)
+    vps = np.asarray(vps, dtype=float)
+    rhos = np.asarray(rhos, dtype=float)
+
+    if not return_interfaces:
+        return hs, vps, rhos
+
+    # reconstruct interfaces
+    z_interfaces = np.concatenate(([0.0], np.cumsum(hs)))
+
+    return z_interfaces, vps, rhos
 
 
 def update_layer(layers, index, h=None, vp=None, rho=None):
@@ -114,5 +123,37 @@ def update_from_arrays(layers, hs=None, vps=None, rhos=None):
     new_hs = curr_hs if hs is None else hs
     new_vps = curr_vps if vps is None else vps
     new_rhos = curr_rhos if rhos is None else rhos
+
+    return create_layers(new_hs, new_vps, new_rhos)
+
+
+def update_layer_slice(
+    layers,
+    vp_slice=None,
+    hs_slice=None,
+    rho_slice=None,
+    start=0,
+    end=None
+):
+    """
+    Update slices of vp, hs, and/or rho in layers.
+    """
+    curr_hs, curr_vps, curr_rhos = to_arrays(layers)
+
+    if end is None:
+        end = len(curr_vps)
+
+    new_hs = curr_hs.copy()
+    new_vps = curr_vps.copy()
+    new_rhos = curr_rhos.copy()
+
+    if hs_slice is not None:
+        new_hs[start:end] = hs_slice
+
+    if vp_slice is not None:
+        new_vps[start:end] = vp_slice
+
+    if rho_slice is not None:
+        new_rhos[start:end] = rho_slice
 
     return create_layers(new_hs, new_vps, new_rhos)

@@ -225,4 +225,4 @@ def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000., vmax=6000., title='my_tit
     plt.ylim([vmin, vmax])
     plt.title(title)
     plt.tight_layout()
-    plt.show()
+    #plt.show()

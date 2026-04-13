@@ -1,132 +1,96 @@
 import numpy as np
+from scipy.optimize import minimize
 from src.config import Config
 from src.builders import build_problem
-from src.layers import create_layers_from_interfaces
+from src.layers import create_layers_from_interfaces, update_layer_slice
 from src.forward import forward
-from src.noise import add_noise
-from src.plot.plot_tools import plot_seismogram
-from src.misfit import l2_misfit, fd_gradient_vp
+from src.misfit import l2_misfit
 from src.adjoint import compute_gradient
-from src.utilities import source_frequency, timer
-
-# -----------------------
-# Build experiment
-# -----------------------
-config = Config(n_receivers=128, noise_level=1.,
-                x_min=0., x_max=700.,
-                z_rec=75., z_src=50., nq_prop=1024, nq_evan=256, f0=10.,
-                total_time=1.024, delay=0.2, 
-                source_deriv=True, epsilon=1.5, 
-                free_surface=True)
-param, acq = build_problem(config)
-print(config)
-
-# -----------------------
-# model
-# -----------------------
-z_interfaces = np.array([0.0, 100.0, 200.0, 250.0, 350.0, 450.0,
-                         550.0, 650.0, 700.0])
-vp = np.array([1505.0, 1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
-rho = np.full_like(vp, 2000.0)
-layers = create_layers_from_interfaces(z_interfaces, vp, rho)
-
-# -----------------------
-# Observations
-# -----------------------
-d_clean, _ = forward(layers, config, timing=True)
-#d_obs, std_noise = add_noise(d_clean, config.noise_level, seed=config.seed)
-
-d_cal_seis = d_clean[0, :, :]
-d_cal_seis = d_cal_seis / np.max(np.abs(d_cal_seis))
-plot_seismogram(d_cal_seis.T, acq.xr, param.time, vmin=-1, vmax=1,
-                cmap='gray_r', ncolors=256, figsize=(7, 7))
+from src.utilities import source_frequency
 
 
-# -----------------------
-# Change vp and get gradient
-# -----------------------
-#vp_new = np.array([1505.0, 1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
-vp_new = np.array([1505.0, 1643.0, 2749.0, 2219.0, 3400.0, 2900.0, 2065.0, 4281.0])
-layers_new = create_layers_from_interfaces(z_interfaces, vp_new, rho)
-d_new, cache = forward(layers_new, config, timing=True)
-residual = d_new - d_clean
-residual = residual[0, :, :]
-plot_seismogram(residual.T, acq.xr, param.time,
-                cmap='gray_r', ncolors=256, figsize=(7, 7))
+def make_fwi_objective(d_obs, layers, config, source_freq, cost_history):
+    ''' define FWI objective function '''
+    def fwi_objective(vp_vec):
+        # Build model
+        lay = update_layer_slice(layers, vp_slice=vp_vec, start=1)
+        # Forward
+        d_cal, cache = forward(lay, config, timing=True)
+        # Misfit
+        residual = d_cal - d_obs
+        phi = l2_misfit(d_cal, d_obs)
+        print("current phi", phi)
+        # Adjoint gradient
+        grad_vp, _ = compute_gradient(
+            residual=residual[0],
+            layers=lay,
+            source_freq=source_freq,
+            config=config,
+            cache=cache,
+        )
 
-tmp = d_clean[0] - d_new[0]
-print("tmp shape", tmp.shape)
+        grad_opt = grad_vp[1:]  # first layer gradient is set to 0
+        # store cost
+        cost_history.append(phi)
+        print(f"phi = {phi:.3e} | vp = {vp_vec}")
+        return phi, grad_opt
+    return fwi_objective
 
-phi0 = l2_misfit(d_clean[0], d_new[0], 1.)
-print("l2 misfit", phi0)
 
-source_freq, omegas = source_frequency(param, config)
+def FWI_scipy():
+    # Build experiment
+    config = Config(n_receivers=16, noise_level=1.,
+                    x_min=0., x_max=700.,
+                    z_rec=75., z_src=50., nq_prop=512, nq_evan=128, f0=10.,
+                    total_time=1.024, delay=0.2,
+                    source_deriv=True, epsilon=1.5,
+                    free_surface=True)
+    param, _ = build_problem(config)
 
-with timer("grad adj 1"):
-    grad_vp, grad_rho = compute_gradient(
-        residual, layers_new, omegas, 
-        source_freq, config, cache
-    )
+    # true model
+    z_interfaces = np.array([0.0, 100.0, 250.0, 400.0, 700.0])
+    # try this for cycle-skipping failure
+    # vp_true = np.array([1500.0, 3000.0, 1800.0, 3500.0])
+    vp_true = np.array([1500.0, 3000.0, 2800.0, 3500.0])
+    rho = np.array([1200.0, 2100.0, 2000.0, 2200.0])
+    layers = create_layers_from_interfaces(z_interfaces, vp_true, rho)
 
-with timer("grad adj 2"):
-    grad_vp, grad_rho = compute_gradient(
-        residual, layers_new, omegas, 
-        source_freq, config, cache
-    )
-print("gradient vp adj", grad_vp)
-print("gradient rho adj", grad_rho)
+    # Observed data
+    source_freq = source_frequency(param, config)
+    d_obs, _ = forward(layers, config, timing=True)
 
-with timer("fd grad"):
-  grad_vp_fd = fd_gradient_vp(
-      vp_new,
-      rho,
-      z_interfaces,
-      config,
-      d_clean[0],
-      1.
-  )
+    # initial model
+    vp_init = np.array([3500.0, 3500.0, 3500.0])
 
-print("fd gradient vp", grad_vp_fd)
-print("------------------")
-
-layers = create_layers_from_interfaces(z_interfaces, vp, rho)
-d0, _ = forward(layers, config)
-
-def J_forward(dm, eps=1e-6):
-    vp_perturbed = vp + eps * dm
-    layers_p = create_layers_from_interfaces(z_interfaces, vp_perturbed, rho)
-
-    d_p, _ = forward(layers_p, config)
-
-    return (d_p[0] - d0[0]) / eps
-
-def J_adjoint(r):
-    grad_vp, _ = compute_gradient(
-        residual=r,
+    cost_history = []
+    objective = make_fwi_objective(
+        d_obs=d_obs,
         layers=layers,
-        omegas=param.omegas,
-        source_freq=source_freq,
         config=config,
-        cache=cache,
+        source_freq=source_freq,
+        cost_history=cost_history,
     )
-    return grad_vp
+    # Run L-BFGS
+    bounds = [(500.0, 7000.0)] * len(vp_init)
+    result = minimize(
+        objective,
+        vp_init,
+        method="L-BFGS-B",
+        jac=True,
+        bounds=bounds,
+        options={
+            "maxiter": 50,
+            "disp": True,
+        },
+    )
+
+    vp_est = result.x
+    print("\nTrue vp :", vp_true)
+    print("Init vp :", vp_init)
+    print("Est vp  :", vp_est)
+    print("\n")
+    print("cost history", cost_history)
 
 
-rng = np.random.default_rng(0)
-
-for _ in range(12):
-    dm = rng.standard_normal(vp.shape)
-    dm[0] = 0.0
-    r = rng.standard_normal(d0[0].shape)
-
-    Jdm = J_forward(dm)
-    Jtr = J_adjoint(r)
-
-    lhs = np.vdot(Jdm.ravel(), r.ravel())
-    rhs = np.vdot(dm[1:].ravel(), Jtr[1:].ravel())
-
-    rel_err = abs(lhs - rhs) / max(abs(lhs), abs(rhs), 1e-16)
-    #print("lhs:", lhs)
-    #print("rhs:", rhs)
-    print("rel_err:", rel_err)
-
+if __name__ == "__main__":
+    FWI_scipy()

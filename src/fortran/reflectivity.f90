@@ -41,7 +41,7 @@ contains
 
     integer :: iw, ik, ell
     complex(dp) :: omega, omega2
-    complex(dp) :: kz_cur, kz_next, Z_cur, Z_next
+    complex(dp) :: kz_cur, kz_next, Z_cur, Z_next, inv_kz
     complex(dp) :: Rval, rint, phase
     complex(dp) :: ghost, cavity
     complex(dp) :: k02_term, numerator, denom_update
@@ -73,7 +73,7 @@ contains
 
     !$OMP PARALLEL DO PRIVATE( &
     !$OMP   ik, ell, omega, omega2, &
-    !$OMP   k02_term, kz_cur, kz_next, Z_cur, Z_next, &
+    !$OMP   k02_term, kz_cur, kz_next, Z_cur, Z_next, inv_kz, &
     !$OMP   Rval, rint, phase, numerator, denom_update, &
     !$OMP   ghost, cavity ) &
     !$OMP SCHEDULE(static) COLLAPSE(2)
@@ -88,17 +88,19 @@ contains
         ! Mimic numpy: sqrt(omega2 * (1/vp^2 - p^2) + 0j)
         k02_term = omega2 * cmplx(vp_inv2(nlay) - p2(ik), 0.0_dp, dp)
         kz_next = csqrt_pos(k02_term)
+        inv_kz = one / kz_next
         
         ! Z = omega * rho / kz using native complex division like numpy
-        Z_next = omega * cmplx(rho(nlay), 0.0_dp, dp) / kz_next
+        Z_next = omega * cmplx(rho(nlay), 0.0_dp, dp) * inv_kz
         Rval   = zero
 
         ! ---- Upward recursion through layers ----
         do ell = nlay - 1, 1, -1
           k02_term = omega2 * cmplx(vp_inv2(ell) - p2(ik), 0.0_dp, dp)
           kz_cur = csqrt_pos(k02_term)
+          inv_kz = one / kz_cur
           
-          Z_cur = omega * cmplx(rho(ell), 0.0_dp, dp) / kz_cur
+          Z_cur = omega * cmplx(rho(ell), 0.0_dp, dp) * inv_kz
 
           ! Interface reflection coefficient
           rint = (Z_next - Z_cur) / (Z_next + Z_cur)

@@ -5,13 +5,13 @@ from src.utilities import adjoint_inverse_fft_signal, timer
 from src.fortran.reflectivity_adjoint import fortran_reflectivity_adj
 
 
-def compute_gradient(residual, layers, omegas, source_freq, config, cache):
+def compute_gradient(residual, layers, source_freq, config, cache):
     ''' backpropagate the residuals through L2 misfit '''
     param, _ = build_problem(config)
     # Adjoint FFT, residual shape: (Nr, Nt) for one source
     adj_response = adjoint_inverse_fft_signal(residual, param, config)
     if config.source_deriv:
-        adj_response *= -1j * np.real(omegas)
+        adj_response *= -1j * np.real(param.omegas)
     
     # Back through source multiplication
     adj_green = adj_response * np.conj(source_freq)
@@ -33,7 +33,7 @@ def compute_gradient(residual, layers, omegas, source_freq, config, cache):
 
     _, dR_dvp_prop, dR_drho_prop = fortran_reflectivity_adj(
         layers,
-        omegas,
+        param.omegas,
         p,
         free_surface=config.free_surface,
         zr=config.z_rec,
@@ -41,7 +41,7 @@ def compute_gradient(residual, layers, omegas, source_freq, config, cache):
     )
     _, dR_dvp_evan, dR_drho_evan = fortran_reflectivity_adj(
         layers,
-        omegas,
+        param.omegas,
         ph,
         free_surface=config.free_surface,
         zr=config.z_rec,

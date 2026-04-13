@@ -32,17 +32,15 @@ def ricker_wavelet(t, f0, t0=0.2):
 def source_frequency(param: Parameters, config: Config):
     """
     convert source from time to frequency domain
-    param: Parameters object
     """
-    omegas = param.omegas
     source_time = ricker_wavelet(param.time, config.f0, config.delay)
     # print(f"Ricker wavelet initialized with delay: {delay} s")
-    # damping time domain 
+    # damping time domain
     source_time *= np.exp(-config.epsilon * param.time)
     # ---- FFT in omega using the +i w t convention ----
     source_freq = np.conj(np.fft.rfft(source_time, n=param.nfft)) * param.dt
 
-    return source_freq, omegas
+    return source_freq
 
 
 def inverse_fft_signal(signal_freq, param: Parameters, config: Config):

@@ -31,7 +31,7 @@ def config_fd():
         delay=0.1,
         nfft_pad_factor=4,
         free_surface=True,
-        epsilon=1.5,
+        epsilon=1.0,
     )
 
 
