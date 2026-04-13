@@ -9,7 +9,24 @@ def get_weights(a, b, npts):
     return weights, points, jac
 
 
-# def gauss_legendre_quad(theta_q, weights, jac, k0, z_abs, x, r_map, integrand):
-#    F_i = integrand(theta_q, k0, z_abs, x, r_map)
-#    integral_approx = jac * np.sum(weights * F_i)
-#    return integral_approx
+def gauss_legendre_quad(a, b, npts, k0, z_abs, x, R_func, integrand):
+    """
+    Gauss-Legendre quadrature of `integrand` over [a, b].
+
+    Parameters
+    ----------
+    a, b      : integration limits
+    npts      : number of quadrature points
+    k0        : wave number at the current frequency
+    z_abs     : |z| depth parameter
+    x         : horizontal offset
+    R_func    : reflectivity callable R(kx_or_psi)
+    integrand : callable(nodes, k0, z_abs, x, R_func) → array
+
+    Returns
+    -------
+    scalar complex approximation of the integral
+    """
+    weights, points, jac = get_weights(a, b, npts)
+    F = integrand(points, k0, z_abs, x, R_func)
+    return jac * np.sum(weights * F)

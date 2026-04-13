@@ -4,6 +4,7 @@ import time
 
 from src.parameters import Parameters
 from src.config import Config
+from src.layers import to_arrays
 
 
 @contextmanager
@@ -78,6 +79,40 @@ def low_freq_taper(omegas, omega_min):
     mask = omegas < omega_min
     taper[mask] = 0.5 * (1 - np.cos(np.pi * omegas[mask] / omega_min))
     return taper
+
+
+def get_critical_angles(layers):
+    """
+    Compute the critical angle at each interface.
+
+    The critical angle at interface i→i+1 is defined as:
+        θ_c = arcsin(vp[i] / vp[i+1])
+    and only exists when vp[i+1] > vp[i] (velocity increase downward).
+
+    Parameters:
+        layers: list of Layer objects or (h, vp, rho) tuples.
+    Returns:
+        list of (interface_index, critical_angle_degrees or None).
+    """
+
+    _, vps, _ = to_arrays(layers)
+    results = []
+    for i in range(len(vps) - 1):
+        v1, v2 = vps[i], vps[i + 1]
+        if v2 > v1:
+            theta_c = np.degrees(np.arcsin(v1 / v2))
+            print(
+                f"Interface {i}→{i+1}: vp {v1:.0f}→{v2:.0f} m/s, "
+                f"critical angle = {theta_c:.2f}°"
+            )
+            results.append((i, theta_c))
+        else:
+            print(
+                f"Interface {i}→{i+1}: vp {v1:.0f}→{v2:.0f} m/s, "
+                f"no critical angle (velocity decrease)"
+            )
+            results.append((i, None))
+    return results
 
 
 def get_kz(omega, vp, p) -> np.ndarray:
