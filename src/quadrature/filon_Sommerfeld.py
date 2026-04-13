@@ -1,23 +1,12 @@
-import sys
-import os
-
-#from src.quadrature import filon
-
 import numpy as np
 import numba as nb
-import time
 from scipy.special import roots_legendre
 
+from src.layers import to_arrays
+from src.quadrature.filon import precompute_quadrature_points, get_weights_filon_numba
+from src.acquisition import Acquisition
+from src.fortran.reflectivity_benchmark import fortran_reflectivity
 
-# add src folder to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-#from reflectivity_kx_omega import reflectivity
-from layers import to_arrays
-from quadrature.filon import precompute_quadrature_points, get_weights_filon, get_weights_filon_numba
-from acquisition import Acquisition
-from fortran.reflectivity_benchmark import fortran_reflectivity, reflectivity_q
-from utilities import get_kz
 
 def integrand_evan_cosh(psi, k0, z_abs, x):
     phase = z_abs *np.sinh(psi) - 1j * x *np.cosh(psi)
@@ -103,8 +92,8 @@ def Sommerfeld_integral2D(
     omega,
     acq: Acquisition,
     Ntheta, Nevan=64,
-    kx_max_factor=4.0, 
-    free_surface=1
+    kx_max_factor=4.0,
+    free_surface: bool = True
 ):
     # layers properties
     h, vp, _ = to_arrays(layers)
@@ -134,7 +123,7 @@ def Sommerfeld_integral2D(
     R_prop = fortran_reflectivity(layers, omega, p, free_surface=free_surface, zr=acq.zr[0], zs=acq.zs[0])
     R_evan = fortran_reflectivity(layers, omega, ph, free_surface=free_surface, zr=acq.zr[0], zs=acq.zs[0])
     #R_evan = reflectivity_q(layers, omega, ph)
-    #kz0_prop, kz0_evan = get_kz(omega, vp[0], p), get_kz(omega, vp[0], ph) 
+    #kz0_prop, kz0_evan = get_kz(omega, vp[0], p), get_kz(omega, vp[0], ph)
 
     if free_surface:
         dz_refl = 2.0 * h[0]

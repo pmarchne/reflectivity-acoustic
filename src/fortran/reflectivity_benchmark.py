@@ -1,19 +1,13 @@
-# reflectivity benchmark
-import sys
-import os
-# add src folder to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import numpy as np
 import time
-from plot.plot_tools import plot_reflectivity
+
+from src.plot.plot_tools import plot_reflectivity
 
 # Attempt to import the compiled Fortran module
 try:
     import src.fortran.reflectivity as reflectivity
     FORTRAN_AVAILABLE = True
     rfmod = reflectivity.reflectivity_mod
-    #print(rfmod.compute_reflectivity.__doc__)
 except Exception as e:
     print("Fortran module not available:", e)
     FORTRAN_AVAILABLE = False
@@ -85,12 +79,12 @@ def reflectivity_q(layers, omegas, p, **kwargs):
     return R
 
 # --- helper to call Fortran reflectivity ---
-def fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
+def fortran_reflectivity(layers, omegas, p, free_surface: bool = True, zr=70.0, zs=80.0):
     if not FORTRAN_AVAILABLE:
         raise RuntimeError("Fortran module not compiled/importable")
     nw = omegas.size
     nq = p.size
-    
+
     h, vp, rho = map(
         lambda x: np.asfortranarray(x, dtype=np.float64),
         zip(*layers)

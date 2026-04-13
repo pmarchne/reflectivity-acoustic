@@ -1,17 +1,17 @@
+import time
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
-from layers import create_layers, to_arrays
-from forward import forward
-from misfit import l2_misfit
-import time
+
+from src.layers import create_layers, to_arrays
+from src.forward import forward
+from src.misfit import l2_misfit
+
 
 class FWILogPosterior:
-    def __init__(self, dobs, layer, param, acqui, config, 
+    def __init__(self, dobs, layer, config,
                  noise_std, prior_mean, prior_cov):
         self.dobs = dobs
         self.layer = layer
-        self.param = param
-        self.acqui = acqui
         self.config = config
         self.noise_std = noise_std
 
@@ -26,26 +26,15 @@ class FWILogPosterior:
     def log_likelihood(self, vp):
         hs, _, rhos = to_arrays(self.layer)
         vp = np.insert(vp, 0, 1500.)
-        layers_new = create_layers(
-            hs=hs,
-            vps=vp,
-            rhos=rhos
-        )
-        dcal = forward(layers_new, self.acqui,
-                       self.param,
-                       nq_prop=self.config.nq_prop,
-                       free_surface=self.config.fs)
-
-        misfit = l2_misfit(
-            dcal, self.dobs,
-            std_noise=self.noise_std
-        )
-        misfit = misfit / (self.param.nt*self.config.Nr)
+        layers_new = create_layers(hs=hs, vps=vp, rhos=rhos)
+        dcal, _ = forward(layers_new, self.config)
+        misfit = l2_misfit(dcal[0], self.dobs, std_noise=self.noise_std)
+        misfit = misfit / (self.config.n_receivers)
         return -misfit
 
     def grad_log_likelihood_fd(self, vp, eps=1e-3):
         grad = np.zeros_like(vp)
-        for i, _ in enumerate(vp):
+        for i in range(len(vp)):
             vp_p = vp.copy()
             vp_m = vp.copy()
             dv = eps * max(1.0, abs(vp[i]))
@@ -62,7 +51,7 @@ class FWILogPosterior:
         return -0.5 * diff @ self.inv_cov @ diff
 
     def grad_log_prior(self, vp):
-        return - self.inv_cov @ (vp - self.mu)
+        return -self.inv_cov @ (vp - self.mu)
 
     # ---------------------
     # Posterior
@@ -88,11 +77,9 @@ class FWILogPosterior:
                 VP[ind2] = ygrid[i, j]
                 VP = np.insert(VP, 0, 1500.)
                 layers = create_layers(hs=hs, vps=VP, rhos=rhos)
-                dcal = forward(layers, self.acqui,
-                        self.param,
-                        nq_prop=self.config.nq_prop,
-                        free_surface=self.config.fs)
-                COST[i,j] = l2_misfit(dcal, self.dobs, std_noise=self.noise_std)
+                dcal, _ = forward(layers, self.config)
+                COST[i, j] = l2_misfit(dcal[0], self.dobs, std_noise=self.noise_std)
         elapsed_time = time.time() - start_time
         print(f"generated misfit map in {elapsed_time:.3f} seconds.")
-        return -COST/(self.param.nt*self.config.Nr), xgrid, ygrid
+        return -COST / self.config.n_receivers, xgrid, ygrid
+

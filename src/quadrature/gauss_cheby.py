@@ -1,16 +1,11 @@
-import sys
-import os
-
-# add src folder to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import numpy as np
-from reflectivity_kx_omega import _reflectivity_numba_core
-from layers import layers_to_arrays
 from numpy.polynomial.chebyshev import chebgauss
 from numpy.polynomial.legendre import leggauss
 from numba import njit, prange
 from scipy.special import y0, j0
+
+from src.reflectivity_kx_omega import _reflectivity_numba_core
+from src.layers import to_arrays
 
 
 def integral_kx_quadrature_numba(
@@ -29,7 +24,7 @@ def integral_kx_quadrature_numba(
     Returns acc_pairs shaped (Np, Nwa), where Np = Ns*Nr and Nwa = number of active omegas.
     """
     # layers
-    h, vp, rho = layers_to_arrays(layers)
+    h, vp, rho = to_arrays(layers)
     # ---- Acquisition geometry ----
     xs = np.asarray(xs).ravel()
     zs = np.asarray(zs).ravel()
@@ -208,7 +203,7 @@ if __name__ == "__main__":
 
     import time
     import matplotlib.pyplot as plt
-    from utilities import green2d
+    from src.kernels import green2d
     vp = 2000.
     layers = [(100.0, vp, 1000.0)]
     freqs = np.linspace(0.1, 100.0, 1024)

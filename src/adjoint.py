@@ -6,13 +6,14 @@ from src.fortran.reflectivity_adjoint import fortran_reflectivity_adj
 
 
 def compute_gradient(residual, layers, source_freq, config, cache):
-    ''' backpropagate the residuals through L2 misfit '''
+    """Backpropagate residuals through the L2 misfit to obtain parameter gradients."""
     param, _ = build_problem(config)
-    # Adjoint FFT, residual shape: (Nr, Nt) for one source
+
+    # Adjoint FFT: residual shape (Nr, Nt) for one source
     adj_response = adjoint_inverse_fft_signal(residual, param, config)
     if config.source_deriv:
         adj_response *= -1j * np.real(param.omegas)
-    
+
     # Back through source multiplication
     adj_green = adj_response * np.conj(source_freq)
 
@@ -26,7 +27,7 @@ def compute_gradient(residual, layers, source_freq, config, cache):
 
     adj_R_prop = compute_prop_adjoint_numba(adj_acc_prop, weights_prop)
     adj_R_evan = compute_evanescent_adjoint_numba(adj_acc_evan, kernel_evan)
-    
+
     # Back through reflectivity
     p = cache["p_prop"]
     ph = cache["p_evan"]
@@ -45,12 +46,13 @@ def compute_gradient(residual, layers, source_freq, config, cache):
         ph,
         free_surface=config.free_surface,
         zr=config.z_rec,
-        zs=config.z_src
+        zs=config.z_src,
     )
 
     grad_vp = sum_gradient(adj_R_prop, dR_dvp_prop, adj_R_evan, dR_dvp_evan)
     grad_rho = sum_gradient(adj_R_prop, dR_drho_prop, adj_R_evan, dR_drho_evan)
-    # Top layer fixed
+
+    # Top layer is held fixed
     grad_vp[0] = 0.0
     grad_rho[0] = 0.0
 
@@ -58,17 +60,18 @@ def compute_gradient(residual, layers, source_freq, config, cache):
 
 
 def sum_gradient(seed_prop, dR_dm_prop, seed_evan, dR_dm_evan):
+    """Contract adjoint seeds with reflectivity Jacobians to form the gradient."""
     res_prop = np.einsum(
         "wq,wql->l",
         np.conj(seed_prop),
         dR_dm_prop,
-        optimize=True
+        optimize=True,
     )
     res_evan = np.einsum(
         "wq,wql->l",
         np.conj(seed_evan),
         dR_dm_evan,
-        optimize=True
+        optimize=True,
     )
     return np.real(res_prop + res_evan)
 
@@ -103,19 +106,3 @@ def compute_evanescent_adjoint_numba(adj_acc_evan, kernel_evan):
         adj_R_evan[w, :] = row
 
     return adj_R_evan
-
-def compute_prop_adjoint(adj_acc_prop, weights_prop):
-    return np.einsum(
-        "pw,pwq->wq",
-        adj_acc_prop,
-        np.conj(weights_prop),
-        optimize=True,
-    )
-
-def compute_evanescent_adjoint(adj_acc_evan, kernel_evan):
-    return np.einsum(
-        "pw,pwq->wq",
-        adj_acc_evan,
-        np.conj(kernel_evan),
-        optimize=True,
-    )

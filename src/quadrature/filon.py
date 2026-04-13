@@ -1,11 +1,6 @@
 import numpy as np
-import os
-import sys
-
 import numba as nb
 
-# Add src folder to Python path if running from an outer directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ''' 
 Propagative regime : after the substitution kx = k0 sin(theta), the 2D Sommerfeld integral takes the form

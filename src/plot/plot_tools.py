@@ -1,10 +1,7 @@
-import sys
-import os
-# add src folder to Python path
-sys.path.append(os.path.abspath(os.path.join("../../")))
-
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import Normalize, ListedColormap
+
 from src.layers import to_arrays
 
 def set_plot_style():
@@ -104,7 +101,6 @@ def get_param_label(param):
     }
     return labels.get(param, param)
 
-from matplotlib.colors import Normalize
 def plot_layered_config(layers, xrecvs=None, zrecvs=None, xs=None, param='vp', cmap='cividis'):
     """
     Plot a 2D x-z cross-section of layered model showing velocity or density.
@@ -157,7 +153,6 @@ def plot_layered_config(layers, xrecvs=None, zrecvs=None, xs=None, param='vp', c
     plt.tight_layout()
     #plt.show()
 
-from matplotlib.colors import ListedColormap
 def plot_seismogram(seismogram, xrecvs, time, vmin=-0.06, vmax=0.06, cmap='seismic', ncolors=256, figsize=(8, 10)):
     """Plot seismogram as image: receivers on x-axis, time on y-axis."""
     

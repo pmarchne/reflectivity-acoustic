@@ -1,8 +1,7 @@
-import numpy as np
-from layers import to_arrays
-
 import time
-import matplotlib.pyplot as plt
+import numpy as np
+
+from src.layers import to_arrays
 
 try:
     from numba import njit, prange
