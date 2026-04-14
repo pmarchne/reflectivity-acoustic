@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from src.config import Config
-from src.forward import ForwardSimulation
+from src.simulation import Simulation
 from src.layers import create_layers_from_interfaces
 
 
@@ -37,7 +37,7 @@ def config_fd():
 
 @pytest.fixture
 def sim_fd(config_fd):
-    return ForwardSimulation(config_fd)
+    return Simulation(config_fd)
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def fd_geometry(sim_fd):
 
 @pytest.fixture
 def sim_small(config_small):
-    return ForwardSimulation(config_small)
+    return Simulation(config_small)
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def param_small(sim_small):
 
 @pytest.fixture
 def sim_fft(config_fft):
-    return ForwardSimulation(config_fft)
+    return Simulation(config_fft)
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ import pytest
 
 from src.utilities import timer
 from src.fortran.reflectivity_benchmark import reflectivity_q, fortran_reflectivity
-from src.forward import ForwardSimulation
+from src.simulation import Simulation
 
 
 def test_reflectivity_benchmark():
@@ -53,12 +53,11 @@ def test_fd_reflectivity(param_fd, config_fd, layered_model):
 
     time_ref = np.linspace(0.0, config_fd.total_time, nt_ref)
 
-    sim = ForwardSimulation(config_fd)
+    sim = Simulation(config_fd)
 
     # warm-up
-    sim.run(layered_model, timing=False)
-
-    d_cal, _ = sim.run(layered_model, timing=True)
+    sim.forward(layered_model, timing=False)
+    d_cal, _ = sim.forward(layered_model, timing=True)
 
     # expected shape: (Ns, Nr, Nt)
     ref = d_cal[0]

@@ -4,7 +4,7 @@ import ultranest
 
 from src.config import Config
 from src.layers import create_layers
-from src.forward import ForwardSimulation
+from src.simulation import Simulation
 from src.noise import add_noise
 from src.sampling.model import FWILogPosterior
 from src.plot.plot_tools import plot_seismogram
@@ -17,8 +17,8 @@ if __name__ == "__main__":
     rhos = np.full_like(vps_ref, 2000.0)
     layers = create_layers(hs, vps_ref, rhos)
 
-    sim = ForwardSimulation(config)
-    d_clean, _ = sim.run(layers)
+    sim = Simulation(config)
+    d_clean, _ = sim.forward(layers)
     d_obs, std_noise = add_noise(d_clean, config.noise_level, seed=config.seed)
 
     plot_seismogram(d_obs[0, :, :], sim.acq.xr, sim.param.time, vmin=-0.06, vmax=0.06)

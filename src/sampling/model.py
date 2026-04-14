@@ -3,7 +3,7 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
 from src.layers import create_layers, to_arrays
-from src.forward import ForwardSimulation
+from src.simulation import Simulation
 from src.misfit import l2_misfit
 
 
@@ -11,7 +11,7 @@ class FWILogPosterior:
     def __init__(self, dobs, layer, config, noise_std, prior_mean, prior_cov):
         self.dobs = dobs
         self.layer = layer
-        self.sim = ForwardSimulation(config)
+        self.sim = Simulation(config)
         self.noise_std = noise_std
 
         self.mu = prior_mean
@@ -30,7 +30,7 @@ class FWILogPosterior:
         hs, _, rhos = to_arrays(self.layer)
         vp = np.insert(vp, 0, 1500.0)
         layers_new = create_layers(hs=hs, vps=vp, rhos=rhos)
-        dcal, _ = self.sim.run(layers_new)
+        dcal, _ = self.sim.forward(layers_new)
         misfit = l2_misfit(dcal[0], self.dobs, std_noise=self.noise_std)
         misfit = misfit / self.sim.config.n_receivers
         return -misfit
@@ -80,7 +80,7 @@ class FWILogPosterior:
                 VP[ind2] = ygrid[i, j]
                 VP = np.insert(VP, 0, 1500.0)
                 layers = create_layers(hs=hs, vps=VP, rhos=rhos)
-                dcal, _ = self.sim.run(layers)
+                dcal, _ = self.sim.forward(layers)
                 COST[i, j] = l2_misfit(dcal[0], self.dobs, std_noise=self.noise_std)
         elapsed_time = time.time() - start_time
         print(f"generated misfit map in {elapsed_time:.3f} seconds.")
