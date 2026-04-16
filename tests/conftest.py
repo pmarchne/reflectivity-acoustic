@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from src.config import Config
-from src.builders import build_problem
+from src.simulation import Simulation
 from src.layers import create_layers_from_interfaces
 
 
@@ -36,27 +36,38 @@ def config_fd():
 
 
 @pytest.fixture
-def param_fd(config_fd):
-    param, _ = build_problem(config_fd)
-    return param
+def sim_fd(config_fd):
+    return Simulation(config_fd)
 
 
 @pytest.fixture
-def fd_geometry(config_fd):
-    _, acq = build_problem(config_fd)
-    return acq
+def param_fd(sim_fd):
+    return sim_fd.param
 
 
 @pytest.fixture
-def param_small(config_small):
-    param, _ = build_problem(config_small)
-    return param
+def fd_geometry(sim_fd):
+    return sim_fd.acq
 
 
 @pytest.fixture
-def param_fft(config_fft):
-    param, _ = build_problem(config_fft)
-    return param
+def sim_small(config_small):
+    return Simulation(config_small)
+
+
+@pytest.fixture
+def param_small(sim_small):
+    return sim_small.param
+
+
+@pytest.fixture
+def sim_fft(config_fft):
+    return Simulation(config_fft)
+
+
+@pytest.fixture
+def param_fft(sim_fft):
+    return sim_fft.param
 
 
 @pytest.fixture

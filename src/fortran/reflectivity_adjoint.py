@@ -4,13 +4,15 @@ from src.utilities import timer
 
 try:
     import src.fortran.reflectivity_adj as reflectivity_adj
+
     FORTRAN_AVAILABLE = True
     rfadjmod = reflectivity_adj.reflectivity_adj_mod
-    #print(rfadjmod.compute_reflectivity_adj.__doc__)
+    # print(rfadjmod.compute_reflectivity_adj.__doc__)
 except Exception as e:
     print("Fortran module not available:", e)
     FORTRAN_AVAILABLE = False
     rfadjmod = None
+
 
 def numpy_reflectivity_p_adj(
     layers,
@@ -20,10 +22,7 @@ def numpy_reflectivity_p_adj(
     zr=70.0,
     zs=80.0,
 ):
-    h, vp, rho = map(
-        lambda x: np.asarray(x, dtype=np.complex128), 
-        zip(*layers)
-    )
+    h, vp, rho = map(lambda x: np.asarray(x, dtype=np.complex128), zip(*layers))
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
     p2 = p * p
@@ -97,9 +96,10 @@ def numpy_reflectivity_p_adj(
                 + np.sin(kz[0] * zs) * np.cos(kz[0] * zr) * zr
             )
 
-            adj_kz[0] += adj_s0 * \
-                (2.0j * h[0] * np.exp(2.0j * kz[0] * h[0])) \
+            adj_kz[0] += (
+                adj_s0 * (2.0j * h[0] * np.exp(2.0j * kz[0] * h[0]))
                 + adj_ghost * dghost_dkz
+            )
             adj_current = adj_Rstep0
         else:
             adj_current = np.ones(nk, dtype=np.complex128)
@@ -145,34 +145,27 @@ def reflectivity_p_adj(layers, omegas, p, **kwargs):
     R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(layers, omegas, p, **kwargs)
     return R, dR_dvp, dR_drho
 
-def gradient_check(
-    layers, omegas, p, eps=1e-8, print_info=False, **kwargs
-):
+
+def gradient_check(layers, omegas, p, eps=1e-8, print_info=False, **kwargs):
     layers = np.asarray(layers, dtype=np.float64)
     z = layers[:, 0]
     vp0 = layers[:, 1].copy()
     rho0 = layers[:, 2].copy()
 
-    R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(
-        layers, omegas, p, **kwargs
-    )
+    R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(layers, omegas, p, **kwargs)
     max_err_vp, max_err_rho = np.zeros_like(vp0), np.zeros_like(rho0)
     for ell in range(len(vp0)):
         vp_cs = vp0.astype(np.complex128)
         vp_cs[ell] += 1j * eps
         layers_cs = np.column_stack([z, vp_cs, rho0])
-        R_cs = numpy_reflectivity_p(
-            layers_cs, omegas, p, **kwargs
-        )
+        R_cs = numpy_reflectivity_p(layers_cs, omegas, p, **kwargs)
         cs_vp = (R_cs - R) / (1j * eps)
         max_err_vp[ell] = np.max(np.abs(cs_vp - dR_dvp[:, :, ell]))
 
         rho_cs = rho0.astype(np.complex128)
         rho_cs[ell] += 1j * eps
         layers_cs = np.column_stack([z, vp0, rho_cs])
-        R_cs = numpy_reflectivity_p(
-            layers_cs, omegas, p, **kwargs
-        )
+        R_cs = numpy_reflectivity_p(layers_cs, omegas, p, **kwargs)
         cs_rho = (R_cs - R) / (1j * eps)
         max_err_rho[ell] = np.max(np.abs(cs_rho - dR_drho[:, :, ell]))
 
@@ -184,17 +177,18 @@ def gradient_check(
             )
     return max_err_vp, max_err_rho
 
+
 def fortran_reflectivity_adj(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     if not FORTRAN_AVAILABLE:
         raise RuntimeError("Fortran module not compiled/importable")
-    h, vp, rho = map(
-        lambda x: np.asfortranarray(x, dtype=np.float64),
-        zip(*layers)
-    )
+    h, vp, rho = map(lambda x: np.asfortranarray(x, dtype=np.float64), zip(*layers))
     omegas = np.asfortranarray(omegas, dtype=np.complex128)
     p = np.asfortranarray(p, dtype=np.float64)
-    R, dR_dvp, dR_drho = rfadjmod.compute_reflectivity_adj(h, vp, rho, omegas, p, free_surface, zr, zs)
+    R, dR_dvp, dR_drho = rfadjmod.compute_reflectivity_adj(
+        h, vp, rho, omegas, p, free_surface, zr, zs
+    )
     return R, dR_dvp, dR_drho
+
 
 def benchmark_adj():
     layers = [
@@ -206,43 +200,40 @@ def benchmark_adj():
 
     freqs = np.linspace(0.1, 50.0, 1024, dtype=np.float64)
     omegas = 2.0 * np.pi * freqs + 0.5 * 1j
-    thetas = np.linspace(0.01, 0.99*np.pi, 1200, dtype=np.float64)
+    thetas = np.linspace(0.01, 0.99 * np.pi, 1200, dtype=np.float64)
     p = np.sin(thetas) / layers[0][1]
 
     fs, zs, zr = 1, 80.0, 70.0
 
     # warm-up
     print("warming up numpy implementation ...")
-    tmp, tmp2, tmp3 = numpy_reflectivity_p_adj(layers, omegas, p,
-                                               free_surface=fs,
-                                               zr=zr,
-                                               zs=zs)
+    tmp, tmp2, tmp3 = numpy_reflectivity_p_adj(
+        layers, omegas, p, free_surface=fs, zr=zr, zs=zs
+    )
     if FORTRAN_AVAILABLE:
         print("warming up fortran implementation ...")
-        tmpf, tmpf2, tmpf3 = fortran_reflectivity_adj(layers, omegas, p,
-                                                      free_surface=fs, zr=zr,
-                                                      zs=zs)
+        tmpf, tmpf2, tmpf3 = fortran_reflectivity_adj(
+            layers, omegas, p, free_surface=fs, zr=zr, zs=zs
+        )
 
     repeats = 5
     for _ in range(repeats):
         with timer("numpy reflectivity adjoint"):
-            R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(layers, omegas, p,
-                                                          free_surface=fs,
-                                                          zr=zr,
-                                                          zs=zs)
+            R, dR_dvp, dR_drho = numpy_reflectivity_p_adj(
+                layers, omegas, p, free_surface=fs, zr=zr, zs=zs
+            )
         if FORTRAN_AVAILABLE:
             with timer("fortran reflectivity adjoint"):
-                Rf, dRf_dvp, dRf_drho = fortran_reflectivity_adj(layers, omegas, p,
-                                                                 free_surface=fs,
-                                                                 zr=zr,
-                                                                 zs=zs)
+                Rf, dRf_dvp, dRf_drho = fortran_reflectivity_adj(
+                    layers, omegas, p, free_surface=fs, zr=zr, zs=zs
+                )
         err_fortran = np.max(np.abs(Rf - R))
         err_fortran_dvp = np.max(np.abs(dRf_dvp - dR_dvp))
         err_fortran_drho = np.max(np.abs(dRf_drho - dR_drho))
         print(f"\nMax abs err Fortran-numpy: {err_fortran:.3e}")
         print(f"Max abs err dR/dvp Fortran-numpy: {err_fortran_dvp:.3e}")
         print(f"Max abs err dR/drho Fortran-numpy: {err_fortran_drho:.3e}")
-    
+
     print("\nPerforming gradient check with complex step ...")
     print("R shape      :", R.shape)
     print("dR_dvp shape  :", dR_dvp.shape)
@@ -251,9 +242,12 @@ def benchmark_adj():
     print("\n dR/dvp derivative value, per layer:", dR_dvp[50, 10, :])
     print("\n dR/drho derivative value, per layer:", dR_drho[50, 10, :])
 
-    max_err_vp, max_err_rho = gradient_check(layers, omegas, p, eps=1e-8, print_info=True, free_surface=fs, zr=zr, zs=zs)
+    max_err_vp, max_err_rho = gradient_check(
+        layers, omegas, p, eps=1e-8, print_info=True, free_surface=fs, zr=zr, zs=zs
+    )
     print(max_err_rho)
     print(max_err_vp)
+
 
 if __name__ == "__main__":
     benchmark_adj()

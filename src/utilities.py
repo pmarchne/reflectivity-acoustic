@@ -1,8 +1,10 @@
 import numpy as np
 from contextlib import contextmanager
 import time
+
 from src.parameters import Parameters
 from src.config import Config
+from src.layers import to_arrays
 
 
 @contextmanager
@@ -25,44 +27,40 @@ def ricker_wavelet(t, f0, t0=0.2):
         ricker : wavelet values.
     """
     tau = t - t0
-    ricker = (1 - 2 * (np.pi * f0 * tau)**2) * np.exp(-(np.pi * f0 * tau)**2)
+    ricker = (1 - 2 * (np.pi * f0 * tau) ** 2) * np.exp(-((np.pi * f0 * tau) ** 2))
     return ricker
 
 
 def source_frequency(param: Parameters, config: Config):
-    """
-    convert source from time to frequency domain
-    """
+    """Convert source wavelet from time to frequency domain."""
     source_time = ricker_wavelet(param.time, config.f0, config.delay)
-    # print(f"Ricker wavelet initialized with delay: {delay} s")
-    # damping time domain
+    # Apply damping in time domain
     source_time *= np.exp(-config.epsilon * param.time)
-    # ---- FFT in omega using the +i w t convention ----
+    # FFT using the +i w t convention
     source_freq = np.conj(np.fft.rfft(source_time, n=param.nfft)) * param.dt
-
     return source_freq
 
 
 def inverse_fft_signal(signal_freq, param: Parameters, config: Config):
     """
     Inverse FFT to time domain using +i w t convention.
+
     Parameters:
         signal_freq : frequency domain signal (N_traces, N_w).
     Returns:
         signal_time : time domain signal (N_traces, N_time).
     """
-    # taper_freq = np.hanning(2*Nw)[Nw:]
-    # T_flat *= taper_freq[None, :] 
     traces = np.conj(np.fft.irfft(np.conj(signal_freq), n=param.nfft, axis=1))
-    traces_cut = traces[:, :param.nt] * np.exp(config.epsilon * param.time)
+    traces_cut = traces[:, : param.nt] * np.exp(config.epsilon * param.time)
     return traces_cut / param.dt
 
 
 def adjoint_inverse_fft_signal(signal_time, param, config):
+    """Adjoint of inverse_fft_signal: maps time-domain residuals to frequency domain."""
     temp = signal_time * np.exp(config.epsilon * param.time)
 
     padded = np.zeros((temp.shape[0], param.nfft), dtype=np.float64)
-    padded[:, :param.nt] = temp
+    padded[:, : param.nt] = temp
 
     s_w = np.conj(np.fft.rfft(np.conj(padded), n=param.nfft, axis=1))
 
@@ -71,20 +69,50 @@ def adjoint_inverse_fft_signal(signal_time, param, config):
     else:
         s_w[:, 1:] *= 2.0
 
-    s_w /= (param.nfft * param.dt)
+    s_w /= param.nfft * param.dt
     return s_w
 
 
 def low_freq_taper(omegas, omega_min):
-    """
-    Smoothly suppress frequencies below omega_min.
-    """
+    """Smoothly suppress frequencies below omega_min."""
     taper = np.ones_like(omegas)
-
     mask = omegas < omega_min
     taper[mask] = 0.5 * (1 - np.cos(np.pi * omegas[mask] / omega_min))
-
     return taper
+
+
+def get_critical_angles(layers):
+    """
+    Compute the critical angle at each interface.
+
+    The critical angle at interface i→i+1 is defined as:
+        θ_c = arcsin(vp[i] / vp[i+1])
+    and only exists when vp[i+1] > vp[i] (velocity increase downward).
+
+    Parameters:
+        layers: list of Layer objects or (h, vp, rho) tuples.
+    Returns:
+        list of (interface_index, critical_angle_degrees or None).
+    """
+
+    _, vps, _ = to_arrays(layers)
+    results = []
+    for i in range(len(vps) - 1):
+        v1, v2 = vps[i], vps[i + 1]
+        if v2 > v1:
+            theta_c = np.degrees(np.arcsin(v1 / v2))
+            print(
+                f"Interface {i}→{i+1}: vp {v1:.0f}→{v2:.0f} m/s, "
+                f"critical angle = {theta_c:.2f}°"
+            )
+            results.append((i, theta_c))
+        else:
+            print(
+                f"Interface {i}→{i+1}: vp {v1:.0f}→{v2:.0f} m/s, "
+                f"no critical angle (velocity decrease)"
+            )
+            results.append((i, None))
+    return results
 
 
 def get_kz(omega, vp, p) -> np.ndarray:
@@ -92,6 +120,6 @@ def get_kz(omega, vp, p) -> np.ndarray:
     p = np.asarray(p)[None, :]  # shape (Np,)
     kz2 = omega**2 * (1.0 / vp**2 - p**2)
     kz = np.sqrt(kz2 + 0j)  # principal branch
-    # enforce principal branch (imag(kz) >= 0)
+    # Enforce Im(kz) >= 0
     kz = np.where(np.imag(kz) < 0, -kz, kz)
     return kz

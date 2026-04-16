@@ -11,9 +11,11 @@ The method operates in the Fourier in both space and time. The steps are as foll
 3. Multiply the result by the source spectrum, and go back to the time domain via inverse Fourier transform (iFFT).
 
 Additional details on how the method works are given below.
+
 ## 2D Green function in the wavenumber domain
 
 To obtain the Green function of the layer stack in the frequency domain, we must evaluate a **Sommerfeld integral** over the horizontal wavenumber space $k_x$. This takes the form
+
 $$
 G(x,z,\omega)
 = \int_{-\infty}^{\infty}
@@ -21,12 +23,15 @@ R(k_x, \omega) \,
 \frac{e^{i k_z z} \, e^{i k_x x}}{2 i k_z} \,
 \mathrm{d}k_x,
 $$
+
 where the vertical wavenumber is given by the dispersion relation
+
 $$
 k_z = \sqrt{k_0^2 - k_x^2},
 \qquad k_0 = \frac{\omega}{v_p}.
 $$
-We select the **principal branch** of the square root so that evanescent waves satisfy $\operatorname{Im}(k_z) > 0$.  
+
+We select the **principal branch** of the square root so that evanescent waves satisfy $\mathrm{Im}(k_z) > 0$.  
 The function $R(k_x,\omega)$ is called the **reflectivity map** of the layered stack. If $R=1$, we have the standard Green kernel solution $G(x, z, \omega) = \frac{i}{4} H_0^{(1)} (kr), \, r=\sqrt{x^2+z^2}$.
 
 ## Reflectivity of the Layer Stack
@@ -38,7 +43,7 @@ In addition, we can set a free surface condition at $z = 0$, which corresponds t
 ## Numerical Considerations
 
 - The integral is **singular** at $k_x = k_0$; propagating $k_x < k_0$ and evanescent $k_x > k_0$ regimes must be treated separately.
-- introducing a small damping in the frequency range $\omega = \omega + \imath \alpha, \; \alpha > 0$ facilitates the quadrature. This artificial damping is removed _a posteriori_ after the iFFT. 
+- introducing a small damping in the frequency range $\omega = \omega + i \alpha, \; \alpha > 0$ facilitates the quadrature. This artificial damping is removed _a posteriori_ after the iFFT. 
 - The integrand is **highly oscillatory** at high frequencies and for large offsets. This calls the need for specialized quadrature schemes tailored to highly oscillatory integrands.
 - The free surface introduces **resonances** in the reflectivity map.  
 

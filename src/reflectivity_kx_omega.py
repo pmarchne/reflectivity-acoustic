@@ -1,14 +1,15 @@
-import numpy as np
-from layers import to_arrays
-
 import time
-import matplotlib.pyplot as plt
+import numpy as np
+
+from src.layers import to_arrays
 
 try:
     from numba import njit, prange
+
     _NUMBA_AVAILABLE = True
 except ImportError:
     _NUMBA_AVAILABLE = False
+
 
 def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
     omega = np.asarray(omega)  # shape (Nw,)
@@ -22,6 +23,7 @@ def get_kz_chunk(omega, c, kx_chunk) -> np.ndarray:
     kz = np.where(np.imag(kz) < 0, -kz, kz)
     return kz
 
+
 # ----- NumPy version -----
 def _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface):
     """
@@ -33,22 +35,22 @@ def _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface):
     h, vp, rho = to_arrays(layers)
     L = len(h)
     Nw, Nkx = kx_chunk.shape
-    R = np.zeros((Nw, Nkx), dtype=np.complex128) 
+    R = np.zeros((Nw, Nkx), dtype=np.complex128)
     Omega = np.asarray(omegas)[:, None]  # (Nw,1)
 
     _, vp_bot, rho_bot = layers[-1]
-    kz_next = get_kz_chunk(omegas, vp_bot, kx_chunk) # (Nw, chunk)
+    kz_next = get_kz_chunk(omegas, vp_bot, kx_chunk)  # (Nw, chunk)
     Z_next = (Omega * rho_bot) / kz_next
 
     # upward recursion
     for ell in range(L - 2, -1, -1):
-        depth = h[ell + 1] # thickness of layer below this interface
+        depth = h[ell + 1]  # thickness of layer below this interface
         vp_cur = vp[ell]
         rho_cur = rho[ell]
 
         kz_cur = get_kz_chunk(omegas, vp_cur, kx_chunk)
         Z_cur = (Omega * rho_cur) / kz_cur
-        
+
         r = (Z_next - Z_cur) / (Z_next + Z_cur)
         phase = np.exp(1j * (2.0 * kz_next * depth))
 
@@ -57,32 +59,34 @@ def _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface):
 
         kz_next = kz_cur
         Z_next = Z_cur
-    
+
         if free_surface:
             # distances
-            z_minus = abs(zr - zs) # direct distance between r and s
-            z_plus  = abs(zr + zs) # distance to image source -s
+            z_minus = abs(zr - zs)  # direct distance between r and s
+            z_plus = abs(zr + zs)  # distance to image source -s
             # direct and image spectral factors (unit source amplitude)
             direct = np.exp(1j * kz_next * z_minus)
-            image  = -np.exp(1j * kz_next * z_plus) # sign for pressure-release
+            image = -np.exp(1j * kz_next * z_plus)  # sign for pressure-release
             # spectral Green (source->receiver) including free surface (no stack multiple-bounce)
-            G_sr = (direct + image)
-            # incorporate stack reflectivity R 
+            G_sr = direct + image
+            # incorporate stack reflectivity R
             # geometric-sum using the round-trip factor
             roundtrip = R * (-1.0) * np.exp(1j * 2.0 * kz_next * h[0])
             denom = 1.0 - roundtrip
-            if (abs(denom.any()) == 0.0):
+            if abs(denom.any()) == 0.0:
                 denom = 1e-12 + 0j
             mult_factor = 1.0 / denom
             # final spectral reflectivity
-            R_spec = R * mult_factor  
+            R_spec = R * mult_factor
             R = R_spec * G_sr
             R -= direct  # remove direct wave if needed
     return R
 
+
 # ----- Optional Numba version -----
 if _NUMBA_AVAILABLE:
     from numba import njit
+
     @njit(parallel=True, fastmath=True)
     def _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, zr, zs, free_surface):
         """
@@ -110,7 +114,7 @@ if _NUMBA_AVAILABLE:
                 # compute kz_next robustly:
                 kz2 = k0 * k0 - kx * kx
                 kz_next = np.sqrt(kz2 + 0j)
-                if (kz_next.imag < 0.0):
+                if kz_next.imag < 0.0:
                     kz_next = -kz_next
                 Z_next = (omega * rho_bot) / kz_next
 
@@ -118,7 +122,7 @@ if _NUMBA_AVAILABLE:
                 # upward recursion
                 # ell indexes layers from L-2 down to 0 (interface between ell and ell+1)
                 for ell in range(L - 2, -1, -1):
-                    h_below = h[ell + 1]   # thickness of layer below interface
+                    h_below = h[ell + 1]  # thickness of layer below interface
                     c_cur = vp[ell]
                     rho_cur = rho[ell]
                     # print("vp_cur", c_cur, "rho_cur", rho_cur, "h_curr", h_below)
@@ -126,7 +130,7 @@ if _NUMBA_AVAILABLE:
                     k0_cur = omega / c_cur
                     kz2_cur = k0_cur * k0_cur - kx * kx
                     kz_cur = np.sqrt(kz2_cur + 0j)
-                    if (kz_cur.imag < 0.0):
+                    if kz_cur.imag < 0.0:
                         kz_cur = -kz_cur
                     Z_cur = (omega * rho_cur) / kz_cur
                     # Fresnel at this interface (Z_cur above, Z_next below)
@@ -139,33 +143,33 @@ if _NUMBA_AVAILABLE:
                     kz_next = kz_cur
                     Z_next = Z_cur
 
-                
                 if free_surface:
                     # distances
-                    z_minus = abs(zr - zs) # direct distance between r and s
-                    z_plus  = abs(zr + zs) # distance to image source -s
+                    z_minus = abs(zr - zs)  # direct distance between r and s
+                    z_plus = abs(zr + zs)  # distance to image source -s
                     # direct and image spectral factors (unit source amplitude)
                     direct = np.exp(1j * kz_next * z_minus)
-                    image  = -np.exp(1j * kz_next * z_plus) # sign for pressure-release
+                    image = -np.exp(1j * kz_next * z_plus)  # sign for pressure-release
                     # spectral Green (source->receiver) including free surface (no stack multiple-bounce)
-                    G_sr = (direct + image)
-                    # incorporate stack reflectivity R 
+                    G_sr = direct + image
+                    # incorporate stack reflectivity R
                     # geometric-sum using the round-trip factor
                     roundtrip = R * (-1.0) * np.exp(1j * 2.0 * kz_next * h[0])
                     denom = 1.0 - roundtrip
-                    if (abs(denom) == 0.0):
+                    if abs(denom) == 0.0:
                         denom = 1e-12 + 0j
                     mult_factor = 1.0 / denom
                     # final spectral reflectivity
-                    R_spec = R * mult_factor  
+                    R_spec = R * mult_factor
                     R = R_spec * G_sr
                     R -= direct  # remove direct wave if needed
 
                 R_chunk[i, j] = R
         return R_chunk
 
+
 def reflectivity(layers, omegas, thetas, zr, zs, mode="k0", use_numba=True, fs=False):
-    
+
     if use_numba and not _NUMBA_AVAILABLE:
         print("Warning: Numba not installed, falling back to NumPy version.")
         use_numba = False
@@ -186,18 +190,23 @@ def reflectivity(layers, omegas, thetas, zr, zs, mode="k0", use_numba=True, fs=F
         kx_chunk = k0 * np.cosh(thetas)[None, :]
     else:
         raise ValueError("mode must be 'k0' or 'psi'")
-    
+
     # call reflectivity engine
     start = time.time()
     if use_numba:
         # Call numba version (to be implemented)
-        R = _reflectivity_numba_core(h, vp, rho, omegas, kx_chunk, zr, zs, free_surface=fs)
+        R = _reflectivity_numba_core(
+            h, vp, rho, omegas, kx_chunk, zr, zs, free_surface=fs
+        )
     else:
-        R = _reflectivity_numpy(layers, omegas, kx_chunk, zr, zs, free_surface=fs).squeeze()
+        R = _reflectivity_numpy(
+            layers, omegas, kx_chunk, zr, zs, free_surface=fs
+        ).squeeze()
     end = time.time()
     print(f"elapsed: {end-start:.2f} s")
-    #R = _reflectivity_numpy(layers, omegas, kx_chunk)
+    # R = _reflectivity_numpy(layers, omegas, kx_chunk)
     return R
+
 
 # Example usage
 if __name__ == "__main__":
@@ -212,21 +221,25 @@ if __name__ == "__main__":
     omegas = 2.0 * np.pi * freqs
 
     kx_max = 0.5
-    Nkx = 2048*8
+    Nkx = 2048 * 8
     kx_vals = np.linspace(-kx_max, kx_max, Nkx)
     kx_grid = np.tile(kx_vals[None, :], (omegas.size, 1))
 
-    #use_numba = True
-    #chunk = 128
+    # use_numba = True
+    # chunk = 128
 
     h, vp, rho = to_arrays(layers)
     R_numpy = _reflectivity_numpy(layers, omegas, kx_grid)
     start = time.time()
-    R_numba = _reflectivity_numba_core(h, vp, rho, omegas, kx_grid, 70., 80., free_surface=False)
+    R_numba = _reflectivity_numba_core(
+        h, vp, rho, omegas, kx_grid, 70.0, 80.0, free_surface=False
+    )
     end = time.time()
     print(f"elapsed: {end-start:.2f} s")
 
     start = time.time()
-    R_numba = _reflectivity_numba_core(h, vp, rho, omegas, kx_grid, 70., 80., free_surface=False)
+    R_numba = _reflectivity_numba_core(
+        h, vp, rho, omegas, kx_grid, 70.0, 80.0, free_surface=False
+    )
     end = time.time()
     print(f"elapsed: {end-start:.2f} s")

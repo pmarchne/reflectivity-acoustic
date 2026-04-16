@@ -16,7 +16,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "black"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
 
 [tool.setuptools.packages.find]
 where = ["."]
