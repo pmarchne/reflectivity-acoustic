@@ -47,11 +47,9 @@ In addition, we can set a free surface condition at $z = 0$, which corresponds t
 - The integrand is **highly oscillatory** at high frequencies and for large offsets. This calls the need for specialized quadrature schemes tailored to highly oscillatory integrands.
 - The free surface introduces **resonances** in the reflectivity map.  
 
-## Things to do
-
-- Compare results with a finite-difference wave solver.  
-- Extend the implementation to **3D physics**.  
-- Compute the **exact gradient** of the forward model with the adjoint method.  
+## Things to do 
+- Extend the implementation to **3D physics**.
+- Improve the quadrature for the Sommerfeld integral by using complex contour deformation.
 - Extend to the elastic case
 
 ## References

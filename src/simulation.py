@@ -35,10 +35,6 @@ from src.fortran.reflectivity_adjoint import fortran_reflectivity_adj
 class Simulation:
     """Forward and adjoint seismic simulation.
 
-    Holds all fixed problem setup — numerical parameters and acquisition geometry — built once from a class Config.
-    The earth model layers is passed at call time so the same object can be reused
-    inside an inversion loop without rebuilding the problem.
-
     Parameters
     ----------
     config : Config
@@ -46,13 +42,10 @@ class Simulation:
 
     Examples
     --------
-    Forward-only (data generation, QC, sampling)::
-
+    Forward-only:
         sim = Simulation(config)
         d_cal, _ = sim.forward(layers)
-
     Forward + gradient (FWI loop)::
-
         sim = Simulation(config)
         d_cal, cache   = sim.forward(layers)
         grad_vp, _     = sim.gradient(residual[0], layers, cache)
@@ -68,7 +61,7 @@ class Simulation:
 
         Parameters
         ----------
-        layers : list of (z, vp, rho) tuples
+        layers : list of (h, vp, rho) tuples
             1-D earth model.
         timing : bool
             If True, print wall-clock time of the Sommerfeld quadrature.
@@ -78,7 +71,7 @@ class Simulation:
         d_cal : ndarray, shape (Ns, Nr, Nt)
             Synthetic seismogram in the time domain.
         cache : dict
-            Intermediate arrays required by :meth:`gradient`.
+            Intermediate arrays required by gradient.
         """
         return _forward(
             layers, self.config, self.param, self.acq, self._source_freq, timing
@@ -90,12 +83,10 @@ class Simulation:
         Parameters
         ----------
         residual : ndarray, shape (Nr, Nt)
-            Time-domain data residual ``d_cal - d_obs`` for **one source**.
-        layers : list of (z, vp, rho) tuples
-            Earth model at which the gradient is evaluated (same as used in
-            the matching :meth:`forward` call).
+            Time-domain data residual 'd_cal - d_obs' for **one source**.
+        layers : list of (h, vp, rho) tuples
         cache : dict
-            Intermediate arrays returned by the matching :meth:`forward` call.
+            Intermediate arrays returned by 'forward' call.
 
         Returns
         -------
@@ -107,11 +98,6 @@ class Simulation:
         return _gradient(
             residual, layers, self._source_freq, self.config, self.param, cache
         )
-
-
-# ======================================================================
-# Private helpers
-# ======================================================================
 
 
 def _forward(

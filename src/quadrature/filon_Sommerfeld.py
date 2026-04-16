@@ -49,11 +49,6 @@ def compute_evanescent(
                 kernel = scaling * (exp_min + exp_plus) * weights_ev[q]
                 kernel_evan[p, w, q] = kernel  # store kernel for adjoint
                 s += kernel * rmap_evan[w, q]
-                # val = (
-                #    np.exp(-k0 * phase_min[q])
-                #    + np.exp(-k0 * phase_plus[q])
-                # ) * rmap_evan[w, q] * weights_ev[q]
-                # s += val
             acc_evan[p, w] = s  # scaling * s
     return acc_evan, kernel_evan
 

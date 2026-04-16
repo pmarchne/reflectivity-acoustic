@@ -28,7 +28,11 @@ def build_parameters(config: Config) -> Parameters:
 
 
 def build_acquisition(config: Config) -> Acquisition:
+
     xr = np.linspace(config.x_min, config.x_max, config.n_receivers)
+    if config.ind_traces is not None:
+        xr = xr[config.ind_traces]
+
     sources = [(config.x_src, config.z_src)]
     receivers = [(x, config.z_rec) for x in xr]
     return Acquisition(sources, receivers)

@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-
+from dataclasses import dataclass, field
+from typing import List
 
 @dataclass(frozen=True)
 class Config:
@@ -15,6 +15,7 @@ class Config:
     x_src: float = 30.0
     z_src: float = 76.0
     z_rec: float = 76.0
+    ind_traces: List[int] = field(default_factory=list)
 
     # Numerics
     nq_prop: int = 256

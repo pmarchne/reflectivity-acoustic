@@ -123,3 +123,58 @@ def get_kz(omega, vp, p) -> np.ndarray:
     # Enforce Im(kz) >= 0
     kz = np.where(np.imag(kz) < 0, -kz, kz)
     return kz
+
+
+def estimate_neff(residual):
+    """
+    Estimates the effective number of samples (N_eff) from a 2D residual array.
+    Assumes residual shape is (n_receivers, n_time).
+    """
+    n_receivers, n_time = residual.shape
+
+    def get_autocorr(x):
+        """Computes the normalized autocorrelation."""
+        if np.all(x == 0):
+            return np.zeros_like(x)
+        x_centered = x - np.mean(x)
+        r = np.correlate(x_centered, x_centered, mode="full")
+        r = r[r.size // 2 :]
+        return r / r[0]
+
+    def get_integrated_tau(rho):
+        """Estimates integrated correlation time, stopping at the first negative value."""
+        # Find the first index where rho <= 0
+        neg_indices = np.where(rho[1:] <= 0)[0]
+        stop_idx = neg_indices[0] + 1 if neg_indices.size > 0 else len(rho)
+
+        # Sum only the positive leading part of the autocorrelation
+        return 1 + 2 * np.sum(rho[1:stop_idx])
+
+    # 1. Calculate Temporal N_eff (Across Time for each receiver)
+    taus_time = []
+    for i in range(n_receivers):
+        rho = get_autocorr(residual[i, :])
+        taus_time.append(get_integrated_tau(rho))
+
+    tau_mean_time = np.mean(taus_time)
+    n_eff_time = n_time / tau_mean_time
+
+    # 2. Calculate Spatial N_eff (Across receivers for each time sample)
+    taus_space = []
+    for t in range(n_time):
+        rho = get_autocorr(residual[:, t])
+        taus_space.append(get_integrated_tau(rho))
+
+    tau_mean_space = np.mean(taus_space)
+    n_eff_receivers = n_receivers / tau_mean_space
+
+    # 3. Total Effective Samples
+    total_n_eff = n_eff_time * n_eff_receivers
+
+    return {
+        "n_eff": total_n_eff,
+        "n_eff_time": n_eff_time,
+        "n_eff_receivers": n_eff_receivers,
+        "tau_time": tau_mean_time,
+        "tau_space": tau_mean_space,
+    }
