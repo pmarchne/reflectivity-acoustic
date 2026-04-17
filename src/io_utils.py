@@ -17,7 +17,7 @@ def read_fd_observations(
     if not file_path.exists():
         raise FileNotFoundError(f"Missing observation file: {file_path}")
 
-    # Read binary (float32 is standard for most FD codes)
+    # Read binary in float32
     raw = np.fromfile(file_path, dtype=np.float32)
 
     if raw.size != nr * nt_ref:

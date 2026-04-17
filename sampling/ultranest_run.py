@@ -1,12 +1,14 @@
-# run_sampling.py
+import os
 import numpy as np
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import ultranest
-from ultranest.plot import cornerplot
+import pickle
+# from ultranest.plot import cornerplot
 from scipy.stats import truncnorm
-from synthetic_experiment import prepare_synthetic_model
+# from synthetic_experiment import prepare_synthetic_model
 from fd_data_experiment import prepare_fd_model
+from src.utilities import timer
 
 
 def run_diagnostic_checks(bayes, prior_transform, v_true=None):
@@ -21,15 +23,18 @@ def run_diagnostic_checks(bayes, prior_transform, v_true=None):
     print("=" * 50)
 
     # 1. Check at Prior Mean
-    lp_mu = bayes.log_prior(mu)
-    ll_mu = bayes.log_likelihood(mu)
+    with timer("prior eval"):
+        lp_mu = bayes.log_prior(mu)
+    with timer("likelihood eval"):
+        ll_mu = bayes.log_likelihood(mu)
     print(f"[*] Prior Mean (mu): {mu}")
     print(f"    > log_prior:      {lp_mu:.4f}")
     print(f"    > log_likelihood: {ll_mu:.4f}")
 
     # 2. Check at mu + sigma (Sensitivity Check)
     vp_test = mu + sigma
-    ll_sigma = bayes.log_likelihood(vp_test)
+    with timer("likelihood eval"):
+        ll_sigma = bayes.log_likelihood(vp_test)
     delta_ll = ll_sigma - ll_mu
     print(f"[*] Shifted (mu + sigma): {vp_test}")
     print(f"    > log_likelihood: {ll_sigma:.4f}")
@@ -37,7 +42,8 @@ def run_diagnostic_checks(bayes, prior_transform, v_true=None):
 
     # 3. Reference Check (The 'Target' Score)
     if v_true is not None:
-        ll_ref = bayes.log_likelihood(v_true)
+        with timer("likelihood eval"):
+            ll_ref = bayes.log_likelihood(v_true)
         print(f"[*] True Reference:      {v_true}")
         print(f"    > log_likelihood: {ll_ref:.4f}")
         print(f"    > Distance to Target: {ll_ref - ll_mu:.4f} (log-units)")
@@ -102,11 +108,16 @@ def run_ultranest_inference(bayes, v_true):
 
     result = sampler.run(min_ess=50, min_num_live_points=300)
     sampler.print_results()
-    cornerplot(result, plot_density=True, title_kwargs={"fontsize": 16})
-    plt.show()
 
-    sampler.plot_corner()
-    plt.show()
+    filename = 'results_ultranest_nofs'
+    with open(filename + '.pkl', 'wb') as fp:
+        pickle.dump(result, fp)
+        print("results saved !")
+    # cornerplot(result, plot_density=True, title_kwargs={"fontsize": 16})
+    # plt.show()
+
+    # sampler.plot_corner()
+    # plt.show()
 
 
 if __name__ == "__main__":
@@ -115,5 +126,6 @@ if __name__ == "__main__":
     # bayes_model = prepare_synthetic_model()
     v_ref = np.array([1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
     bayes_model = prepare_fd_model()
+    print("n cpu : ", os.cpu_count())
     # Launch UltraNest
     run_ultranest_inference(bayes_model, v_true=v_ref)

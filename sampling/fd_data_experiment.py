@@ -64,11 +64,10 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
         normalize=True,
     )
 
-    # Add noise to represent measurement uncertainty
     # std_noise will be relative to the normalized peak (1.0)
     d_obs_final, std_noise = add_noise(d_obs_fd, noise_level=0.1)
 
-    # 4. Consistency Check (Verification of the Forward Model)
+    # 4. Consistency Check
     d_fwd, _ = sim.forward(layers)
     scale = np.max(d_fwd.squeeze())
     d_fwd = (
@@ -84,7 +83,7 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
     print(f"Estimated Noise Std: {std_noise:.4f}")
 
     # 5. Bayesian Setup
-    # Prior for Vp (excluding the half-space if applicable)
+    # Prior for Vp
     mu = 3000.0 * np.ones(len(vps_ref) - 1)
     sigma = 800.0 * np.ones(len(mu))
     cov = np.diag(sigma**2)
@@ -110,6 +109,5 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
 
 
 if __name__ == "__main__":
-    # Test the preparation
     model = prepare_fd_model()
     print("Success: Bayesian Model ready for UltraNest.")
