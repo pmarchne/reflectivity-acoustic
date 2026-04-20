@@ -1,13 +1,11 @@
 import os
-import numpy as np
-
-# import matplotlib.pyplot as plt
-import ultranest
 import pickle
+import numpy as np
+import ultranest
 # from ultranest.plot import cornerplot
 from scipy.stats import truncnorm
-# from synthetic_experiment import prepare_synthetic_model
-from fd_data_experiment import prepare_fd_model
+from synthetic_experiment import prepare_synthetic_model
+# from fd_data_experiment import prepare_fd_model
 from src.utilities import timer
 
 
@@ -74,31 +72,34 @@ def run_diagnostic_checks(bayes, prior_transform, v_true=None):
     print("=" * 50 + "\n")
 
 
-def run_ultranest_inference(bayes, v_true):
-    # Bounds for Vp
-    v_min, v_max = 1000.0, 7000.0
-
-    mu = bayes.mu
-    sigma = np.sqrt(np.diag(bayes.cov))
+def run_ultranest_inference(bayes, v_true, prior_mode='gaussian'):
 
     def prior_transform(cube):
         """
-        Maps UltraNest's [0, 1] space to a Truncated Gaussian [1000, 7000]
+        Maps UltraNest's [0, 1] unit cube to physical parameter space.
+        Options:
+        - mode='gaussian': Truncated Gaussian
+        - mode='uniform': Uniform [1000, 7000]
         """
-        params = np.empty_like(cube)
-        a_scaled = (v_min - mu) / sigma
-        b_scaled = (v_max - mu) / sigma
-
-        # Map the entire cube in one shot
-        params = truncnorm.ppf(cube, a_scaled, b_scaled, loc=mu, scale=sigma)
-        return params
+        # Bounds for Vp
+        v_min, v_max = 1000.0, 7000.0
+        if prior_mode == 'uniform':
+            # Simple linear mapping: [0, 1] -> [min, max]
+            return cube * (v_max - v_min) + v_min
+        elif prior_mode == 'gaussian':
+            mu = bayes.mu
+            sigma = np.sqrt(np.diag(bayes.cov))
+            a_scaled = (v_min - mu) / sigma
+            b_scaled = (v_max - mu) / sigma
+            # Map the entire cube in one shot
+            return truncnorm.ppf(cube, a_scaled, b_scaled, loc=mu, scale=sigma)
 
     def log_likelihood(params):
         return bayes.log_likelihood(params)
 
     run_diagnostic_checks(bayes, prior_transform, v_true)
 
-    param_names = [f"Vp_{i+1}" for i in range(len(mu))]
+    param_names = [f"Vp_{i+1}" for i in range(len(v_true))]
 
     sampler = ultranest.ReactiveNestedSampler(
         param_names,
@@ -106,26 +107,23 @@ def run_ultranest_inference(bayes, v_true):
         prior_transform,
     )
 
-    result = sampler.run(min_ess=50, min_num_live_points=300)
+    result = sampler.run(min_ess=500, min_num_live_points=300)  # 1000
     sampler.print_results()
 
-    filename = 'results_ultranest_nofs'
+    filename = 'results_ultranest_synthetic_noise015_cov1000_fs'
     with open(filename + '.pkl', 'wb') as fp:
         pickle.dump(result, fp)
         print("results saved !")
     # cornerplot(result, plot_density=True, title_kwargs={"fontsize": 16})
     # plt.show()
 
-    # sampler.plot_corner()
-    # plt.show()
-
 
 if __name__ == "__main__":
     # Link to the experiment file
-    # v_true = np.array([3000.0, 1800.0, 3500.0])
-    # bayes_model = prepare_synthetic_model()
-    v_ref = np.array([1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
-    bayes_model = prepare_fd_model()
+    v_ref = np.array([3500.0, 1800.0, 2300.0, 4000.0])
+    bayes_model = prepare_synthetic_model()
+    # v_ref = np.array([1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
+    # bayes_model = prepare_fd_model()
     print("n cpu : ", os.cpu_count())
     # Launch UltraNest
-    run_ultranest_inference(bayes_model, v_true=v_ref)
+    run_ultranest_inference(bayes_model, v_true=v_ref, prior_mode='gaussian')

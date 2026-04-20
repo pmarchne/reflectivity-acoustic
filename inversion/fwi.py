@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from src.config import Config
 from src.layers import create_layers_from_interfaces, update_layer_slice
@@ -35,7 +36,7 @@ def make_fwi_objective(d_obs, layers, sim, cost_history):
     return fwi_objective
 
 
-def fwi_scipy():
+def fwi_scipy(plot_history):
     # Build experiment
     config = Config(
         n_receivers=16,
@@ -68,17 +69,38 @@ def fwi_scipy():
     d_obs, _ = sim.forward(layers)
     vp_init = np.array([3500.0, 4000.0, 4000.0])
 
-    print(f"Starting FWI (L-BFGS-B)\n{'-'*30}")
-    result = minimize(
-        make_fwi_objective(d_obs, layers, sim, []),
-        vp_init,
-        method="L-BFGS-B",
-        jac=True,
-        bounds=[(500.0, 7000.0)] * len(vp_init),
-        options={"maxiter": 50, "disp": False},
-    )
-    print(f"{'-'*50}\nInverted Vp: {result.x}")
+    methods = ["L-BFGS-B", "TNC", "SLSQP"]
+    results_history = {}
+
+    for method in methods:
+        print(f"Starting FWI ({method})\n{'-'*30}")
+        cost_history = []
+        obj_func = make_fwi_objective(d_obs, layers, sim, cost_history)
+        res = minimize(
+            obj_func,
+            vp_init,
+            method=method,
+            jac=True,
+            bounds=[(500.0, 7000.0)] * len(vp_init),
+            options={"maxiter": 50}
+        )
+        print(f"{'-'*50}\nInverted Vp: {res.x}")
+        results_history[method] = cost_history
+        print(f"{method} completed in {len(cost_history)} evaluations.")
+
+    # Plotting the Cost History
+    if plot_history:
+        plt.figure(figsize=(6, 3))
+        for method, history in results_history.items():
+            plt.semilogy(history, label=method, marker='o', markersize=4)
+
+        plt.title("FWI Convergence")
+        plt.xlabel("Iterations")
+        plt.ylabel("L2 Misfit")
+        plt.grid(True, which="both", ls="-", alpha=0.5)
+        plt.legend()
+        plt.show()
 
 
 if __name__ == "__main__":
-    fwi_scipy()
+    fwi_scipy(plot_history=True)
