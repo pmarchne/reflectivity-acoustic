@@ -1,57 +1,55 @@
 # Reflectivity-Acoustic
 
-This repository implements the **reflectivity method** for computing synthetic seismograms in the acoustic approximation. The reflectivity method is a semi-analytical method that allows to solve the wave equation in **vertically layered media**. The goal is to leverage this assumption in order to propose a fast alternative to spectral elements or finite difference implementations.  
+This repository implements the **reflectivity method** for computing synthetic seismograms within the acoustic approximation.
 
-> This project is currently in progress
+The reflectivity method is a semi-analytical approach for solving the wave equation in **vertically layered media**. By leveraging the 1D nature of the velocity model, this implementation provides a fast alternative to grid-based (FD, SEM) methods.
 
-# Methodology 
-The method operates in the Fourier in both space and time. The steps are as follows:
-1. generate recursively a multi-layer reflection coefficient for all incidence angles (i.e. all spatial wavenumbers),
-2. integrate over all incidence angles to obtain the frequency-domain response of the multi-layer stack. This amounts to evaluate a *Sommerfeld integral*.
-3. Multiply the result by the source spectrum, and go back to the time domain via inverse Fourier transform (iFFT).
+> **Status:** Project in progress
 
-Additional details on how the method works are given below.
+---
 
-## 2D Green function in the wavenumber domain
+## Methodology
 
-To obtain the Green function of the layer stack in the frequency domain, we must evaluate a **Sommerfeld integral** over the horizontal wavenumber space $k_x$. This takes the form
+The solver operates in the Fourier frequency-wavenumber ($\omega-k_x$) domain. The three primary steps are:
 
-$$
-G(x,z,\omega)
-= \int_{-\infty}^{\infty}
-R(k_x, \omega) \,
-\frac{e^{i k_z z} \, e^{i k_x x}}{2 i k_z} \,
-\mathrm{d}k_x,
-$$
+1. **Recursive reflection coefficient:** Compute a multi-layer reflection coefficient for all incidence angles (spatial wavenumbers).
+2. **Sommerfeld Integration:** Integrate over all incidence angles to obtain the frequency-domain response of the stack.
+3. **Time-Domain Transformation:** Multiply by the source spectrum and apply an Inverse Fast Fourier Transform (iFFT).
 
-where the vertical wavenumber is given by the dispersion relation
+### 2D Green's Function in the Wavenumber Domain
+The frequency-domain Green's function for a layered stack is obtained by evaluating a **Sommerfeld integral**. or 2D physics, it reads:
 
 $$
-k_z = \sqrt{k_0^2 - k_x^2},
-\qquad k_0 = \frac{\omega}{v_p}.
+G(x, z, \omega) = \int_{-\infty}^{\infty} R(k_x, \omega) \frac{e^{i k_z z} e^{i k_x x}}{2 i k_z} \mathrm{d}k_x
 $$
 
-We select the **principal branch** of the square root so that evanescent waves satisfy $\mathrm{Im}(k_z) > 0$.  
-The function $R(k_x,\omega)$ is called the **reflectivity map** of the layered stack. If $R=1$, we have the standard Green kernel solution $G(x, z, \omega) = \frac{i}{4} H_0^{(1)} (kr), \, r=\sqrt{x^2+z^2}$.
+The vertical wavenumber $k_z$ is defined by the dispersion relation:
+$$k_z = \sqrt{k_0^2 - k_x^2}, \quad k_0 = \frac{\omega}{v_p}$$
+We select the **principal branch** of the square root to ensure evanescent waves satisfy $\mathrm{Im}(k_z) > 0$. 
 
-## Reflectivity of the Layer Stack
+> **Note:** If $R=1$ (homogeneous space), the integral simplifies to the standard 2D Green's kernel: $G(x, z, \omega) = \frac{i}{4} H_0^{(1)} (k r)$.
 
-Using interface conditions (continuity of pressure and vertical velocity) at each layer interface, we can construct recursively the reflectivity map $R(k_x,\omega)$, which incorporates all the multiple reflections of the stack.
+### Reflectivity of the Layer Stack
+The reflectivity map $R(k_x, \omega)$ is constructed recursively using interface conditions (continuity of pressure and vertical velocity). 
+- **Multiples:** The recursive formulation naturally incorporates all internal multiple reflections.
+- **Free Surface:** A free-surface condition at $z=0$ can be enabled, imposing a reflection coefficient of $R_{	ext{surface}} = -1$.
 
-In addition, we can set a free surface condition at $z = 0$, which corresponds to impose a reflection coefficient $R_{\text{surface}} = -1.$ on the top of the stack.
+---
 
 ## Numerical Considerations
 
-- The integral is **singular** at $k_x = k_0$; propagating $k_x < k_0$ and evanescent $k_x > k_0$ regimes must be treated separately.
-- introducing a small damping in the frequency range $\omega = \omega + i \alpha, \; \alpha > 0$ facilitates the quadrature. This artificial damping is removed _a posteriori_ after the iFFT. 
-- The integrand is **highly oscillatory** at high frequencies and for large offsets. This calls the need for specialized quadrature schemes tailored to highly oscillatory integrands.
-- The free surface introduces **resonances** in the reflectivity map.  
+* **Singularities:** The integrand is singular at the critical wavenumber $k_x = k_0$. Propagating $k_x < k_0$ and evanescent $k_x > k_0$ regimes are treated separately in the code.
+* **Complex Frequencies:** Small damping ($\omega = \omega + i \alpha$) is introduced to facilitate quadrature. This artificial damping is removed after the iFFT.
+* **Oscillations:** The integrand becomes highly oscillatory at high frequencies and large offsets, requiring specialized quadrature schemes.
+* **Resonances:** The free surface introduces strong resonances in the reflectivity map that must be handled carefully.
 
-## Things to do 
-- Extend the implementation to **3D physics**.
-- Improve the quadrature for the Sommerfeld integral by using complex contour deformation.
-- Extend to the elastic case
+---
 
+## Roadmap
+- Extend implementation to **3D physics**.
+- Implement **complex contour deformation** for the Sommerfeld integral.
+- Extend to **Elastic** wave propagation.
+  
 ## References
 1. Mallick, S., & Frazer, L. N. (1987). Practical aspects of reflectivity modeling. Geophysics, 52(10), 1355-1364.
 2. Muller, G. (1985). The reflectivity method: a tutorial. Journal of Geophysics, 58(1), 153-174.
