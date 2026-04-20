@@ -32,7 +32,7 @@ We select the **principal branch** of the square root to ensure evanescent waves
 ### Reflectivity of the Layer Stack
 The reflectivity map $R(k_x, \omega)$ is constructed recursively using interface conditions (continuity of pressure and vertical velocity). 
 - **Multiples:** The recursive formulation naturally incorporates all internal multiple reflections.
-- **Free Surface:** A free-surface condition at $z=0$ can be enabled, imposing a reflection coefficient of $R_{	ext{surface}} = -1$.
+- **Free Surface:** A free-surface condition at $z=0$ can be enabled, imposing a reflection coefficient of $R = -1$.
 
 ---
 
