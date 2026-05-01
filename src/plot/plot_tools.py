@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import Normalize, ListedColormap
-
+from matplotlib.colors import Normalize, ListedColormap, hsv_to_rgb
 from src.layers import to_arrays
 
 
@@ -42,21 +41,72 @@ def plot_reflectivity(omegas, thetas, rmap, omega_c, figsize=(12, 6)):
         vmin=0.0,
         vmax=valmax,
     )
-    plt.xlabel("Angle (deg)")
-    plt.ylabel("frequency (Hz)")
-    plt.colorbar(label="abs(R)")
+    plt.axhline(y=omega_c, color='blue', linestyle='--', linewidth=2)
+    plt.xlabel(r"$\theta$ (deg)")
+    plt.ylabel(r"$\omega$ (rad/s)")
 
     omega_idx = np.argmin(np.abs(omegas - omega_c))
     r_omega = np.abs(rmap[omega_idx, :])
     plt.subplot(1, 2, 2)
-    plt.plot(180.0 * thetas / np.pi, r_omega, linewidth=2)
+    plt.plot(180.0 * thetas / np.pi, r_omega, linewidth=2, color='blue')
 
-    plt.xlabel("Angle (deg)")
-    plt.ylabel("abs(R)")
+    plt.xlabel(r"$\theta$ (deg)")
+    plt.ylabel(r"$|R|$")
     plt.grid(True, alpha=0.3)
     plt.ylim([0, 1.1 * valmax])
+    plt.xlim([0., 180.0 * thetas[-1] / np.pi])
     plt.tight_layout()
     plt.show()
+
+
+def plot_reflectivity_complex_plane(R_mesh, theta_re, theta_im, title="Reflection Coefficient $R(\\theta)$"):
+    """
+    Plots the complex plane using domain coloring.
+    
+    Parameters:
+    - R_mesh: 2D complex array of the function values
+    - theta_re: 1D array of the real parts (degrees)
+    - theta_im: 1D array of the imaginary parts (radians)
+    """
+    # 1. Extract Phase and Magnitude
+    phase = np.angle(R_mesh)
+    magnitude = np.abs(R_mesh)
+    # 2. HSV Mapping
+    # Hue: Phase (0 to 2pi mapped to 0 to 1)
+    H = (phase + np.pi) / (2 * np.pi)
+    # Saturation: Fixed at 1 for vibrant colors
+    S = np.ones_like(H)
+    
+    # Value: Magnitude mapping
+    # Zeros (mag=0) -> Black (V=0)
+    # Poles (mag->inf) -> White (V=1)
+    # The exponent 0.5 helps compress the dynamic range so poles don't wash out the whole plot
+    V = 1 - 1 / (1 + magnitude**0.5)
+
+    # 3. Convert to RGB
+    HSV = np.stack((H, S, V), axis=-1)
+    RGB = hsv_to_rgb(HSV)
+
+    # 4. Generate Plot
+    fig, ax = plt.subplots(figsize=(6, 5))
+    
+    extent = [theta_re.min(), theta_re.max(), theta_im.min(), theta_im.max()]
+    ax.imshow(RGB, extent=extent, origin='lower', aspect='auto', interpolation='bilinear')
+    
+    ax.set_title(title)
+    ax.set_xlabel(r"Re($\theta$)")
+    ax.set_ylabel(r"Im($\theta$)")
+
+    # Add a custom colorbar for Phase
+    norm = Normalize(0, 2*np.pi)
+    sm = plt.cm.ScalarMappable(cmap='hsv', norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, ticks=[0, np.pi, 2*np.pi])
+    cbar.set_ticklabels(['0', '$\pi$', '$2\pi$'])
+    cbar.set_label('Phase (Hue)')
+
+    plt.tight_layout()
+    return fig, ax
 
 
 def plot_signal_time_freq(time, source_time, freq, source_freq, figsize=(10, 5)):

@@ -42,5 +42,6 @@ class Acquisition:
 
     def distances_ghost(self):
         dx = self.sources[:, 0][:, None] - self.receivers[:, 0][None, :]
+        # For the ghost source, the vertical distance is the sum of source and receiver depths
         dz = self.sources[:, 1][:, None] + self.receivers[:, 1][None, :]
         return np.sqrt(dx**2 + dz**2).ravel()

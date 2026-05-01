@@ -122,20 +122,17 @@ def Sommerfeld_integral2D(
     ph = np.cosh(psi_i) / vp[0]
 
     # reflectivity of the stack
-    # R_prop = reflectivity_q(layers, omega, p)
     R_prop = fortran_reflectivity(
         layers, omega, p, free_surface=free_surface, zr=acq.zr[0], zs=acq.zs[0]
     )
     R_evan = fortran_reflectivity(
         layers, omega, ph, free_surface=free_surface, zr=acq.zr[0], zs=acq.zs[0]
     )
-    # R_evan = reflectivity_q(layers, omega, ph)
-    # kz0_prop, kz0_evan = get_kz(omega, vp[0], p), get_kz(omega, vp[0], ph)
 
     if free_surface:
-        dz_refl = 2.0 * h[0]
+        dz_refl = 2.0 * h[0] # with free surface, the total path length is twice the depth of the top layer
     else:
-        dz_refl = 2.0 * h[0] - acq.zs[0] - acq.zr[0]
+        dz_refl = 2.0 * h[0] - acq.zs[0] - acq.zr[0] # without free surface, the path length is the sum of source and receiver depths
 
     # accumulators: (Np, Nwa)
     acc_prop = np.zeros((Np, Nw), dtype=np.complex128)

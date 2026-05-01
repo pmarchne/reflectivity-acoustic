@@ -1,4 +1,5 @@
 import numpy as np
+import numba as nb
 import time
 
 from src.plot.plot_tools import plot_reflectivity
@@ -6,7 +7,6 @@ from src.plot.plot_tools import plot_reflectivity
 # Attempt to import the compiled Fortran module
 try:
     import src.fortran.reflectivity as reflectivity
-
     FORTRAN_AVAILABLE = True
     rfmod = reflectivity.reflectivity_mod
 except Exception as e:
@@ -15,12 +15,11 @@ except Exception as e:
     rfmod = None
 
 
-# --- NumPy vectorized implementation ---
+# --- NumPy implementation ---
 def numpy_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     # let complex model parameters for adjoint gradient check
     h, vp, rho = map(lambda x: np.asarray(x, dtype=np.complex128), zip(*layers))
     omegas = np.asarray(omegas, dtype=np.complex128)
-    p = np.asarray(p, dtype=np.float64)
     p2 = p**2
 
     nlay = len(h)
@@ -31,20 +30,18 @@ def numpy_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     inv_vp2 = 1.0 / (vp * vp)
 
     for iw, omega in enumerate(omegas):
-        omega2 = omega * omega
-
         kz = np.zeros((nlay, nk), dtype=np.complex128)
         Z = np.zeros((nlay, nk), dtype=np.complex128)
         Rstep = np.zeros((nlay, nk), dtype=np.complex128)
         Rval = np.zeros(nk, dtype=np.complex128)
 
-        kz[-1] = np.sqrt(omega2 * (inv_vp2[-1] - p2) + 0j)
+        kz[-1] = omega * np.sqrt((inv_vp2[-1] - p2) + 0j)
         kz[-1] = np.where(np.imag(kz[-1]) < 0, -kz[-1], kz[-1])
         Z[-1] = omega * rho[-1] / kz[-1]
         Rstep[-1] = 0.0 + 0.0j
 
         for ell in range(nlay - 2, -1, -1):
-            kz[ell] = np.sqrt(omega2 * (inv_vp2[ell] - p2) + 0j)
+            kz[ell] = omega * np.sqrt((inv_vp2[ell] - p2) + 0j)
             kz[ell] = np.where(np.imag(kz[ell]) < 0, -kz[ell], kz[ell])
             Z[ell] = omega * rho[ell] / kz[ell]
 
@@ -65,6 +62,67 @@ def numpy_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     return R
 
 
+# --- numba implementation ---
+@nb.njit(parallel=True, fastmath=True)
+def numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
+    nlay = len(layers)
+    nw = len(omegas)
+    nk = len(p)
+    # unpack layers
+    h = np.empty(nlay, dtype=np.complex128)
+    vp = np.empty(nlay, dtype=np.complex128)
+    rho = np.empty(nlay, dtype=np.complex128)
+
+    for i in range(nlay):
+        h[i] = layers[i][0]
+        vp[i] = layers[i][1]
+        rho[i] = layers[i][2]
+
+    p2 = p * p
+    inv_vp2 = 1.0 / (vp * vp)
+    R = np.zeros((nw, nk), dtype=np.complex128)
+
+    for iw in nb.prange(nw):
+        omega = omegas[iw]
+        kz = np.zeros((nlay, nk), dtype=np.complex128)
+        Z = np.zeros((nlay, nk), dtype=np.complex128)
+        Rstep = np.zeros((nlay, nk), dtype=np.complex128)
+        Rval = np.zeros(nk, dtype=np.complex128)
+
+        # --- bottom layer ---
+        for ik in range(nk):
+            kz[nlay-1, ik] = omega * np.sqrt((inv_vp2[nlay-1] - p2[ik]) + 0j)
+            if kz[nlay-1, ik].imag < 0:
+                kz[nlay-1, ik] = -kz[nlay-1, ik]
+            Z[nlay-1, ik] = omega * rho[nlay-1] / kz[nlay-1, ik]
+            Rstep[nlay-1, ik] = 0.0 + 0.0j
+
+        # --- downward recursion ---
+        for ell in range(nlay - 2, -1, -1):
+            for ik in range(nk):
+                kz[ell, ik] = omega * np.sqrt((inv_vp2[ell] - p2[ik]) + 0j)
+                if kz[ell, ik].imag < 0:
+                    kz[ell, ik] = -kz[ell, ik]
+                Z[ell, ik] = omega * rho[ell] / kz[ell, ik]
+                r = (Z[ell+1, ik] - Z[ell, ik]) / (Z[ell+1, ik] + Z[ell, ik])
+                phase = np.exp(2.0j * kz[ell+1, ik] * h[ell+1])
+                D = 1.0 + r * Rstep[ell+1, ik] * phase
+                Rstep[ell, ik] = (r + Rstep[ell+1, ik] * phase) / D
+
+        # --- free surface ---
+        for ik in range(nk):
+            if free_surface:
+                kz0 = kz[0, ik]
+                cavity = 1.0 / (1.0 + Rstep[0, ik] * np.exp(2.0j * kz0 * h[0]))
+                ghost = -4.0 * np.sin(kz0 * zs) * np.sin(kz0 * zr)
+                Rval[ik] = cavity * Rstep[0, ik] * ghost
+            else:
+                Rval[ik] = Rstep[0, ik]
+        R[iw, :] = Rval
+    return R
+
+
+
 def reflectivity_q(layers, omegas, p, **kwargs):
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
@@ -78,18 +136,10 @@ def fortran_reflectivity(
 ):
     if not FORTRAN_AVAILABLE:
         raise RuntimeError("Fortran module not compiled/importable")
-    nw = omegas.size
-    nq = p.size
-
     h, vp, rho = map(lambda x: np.asfortranarray(x, dtype=np.float64), zip(*layers))
     omegas = np.asfortranarray(omegas, dtype=np.complex128)
     p = np.asfortranarray(p, dtype=np.float64)
-    # print("Calling Fortran reflectivity module...")
-    # print(f"Layers: {h.size}, Frequencies: {nw}, q points: {nq}")
-    # t0 = time.time()
     R = rfmod.compute_reflectivity(h, vp, rho, omegas, p, free_surface, zr, zs)
-    # t1 = time.time()
-    # print("fortran elapsed: {:.3f}s, R shape {}".format(t1-t0, R.shape))
     return R
 
 
@@ -115,6 +165,9 @@ def benchmark():
         print("warming up fortran implementation ...")
         # R_f = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
         R_f = fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+    else:
+        print("\nFortran module not available - use numba.")
+        R_f = numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
 
     # real benchmark
     print("\n ----- Benchmark ----- ")
@@ -129,29 +182,32 @@ def benchmark():
         t_np += dt
     t_np /= repeats
 
-    if FORTRAN_AVAILABLE:
-        t_f = 0.0
-        for r in range(repeats):
-            t0 = time.time()
+    
+    t_f = 0.0
+    for r in range(repeats):
+        t0 = time.time()
+        if FORTRAN_AVAILABLE:
             R_f = fortran_reflectivity(
                 layers, omegas, p, free_surface=1, zr=70.0, zs=80.0
             )
-            t1 = time.time()
-            dt = t1 - t0
-            print(f"fortran run {r+1}/{repeats} : {dt:.3f}s")
-            t_f += dt
-        t_f /= repeats
+        else:
+            print("\nFortran module not available - use numba.")
+            R_f = numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+        t1 = time.time()
+        dt = t1 - t0
+        print(f"fortran run {r+1}/{repeats} : {dt:.3f}s")
+        t_f += dt
+    t_f /= repeats
+    
 
-        print(
-            "\nAverage times (s): numpy {:.3f}  fortran {:.3f}  speedup {:.2f}x".format(
-                t_np, t_f, t_np / t_f
-            )
+    print(
+        "\nAverage times (s): numpy {:.3f}  fortran {:.3f}  speedup {:.2f}x".format(
+            t_np, t_f, t_np / t_f
         )
-    else:
-        print("\nFortran module not available — only numpy timings shown.")
+    )
 
     err = np.max(np.abs(R_np - R_f))
-    print(f"Max abs error between numpy and fortran: {err:.3e}")
+    print(f"Max abs error between implementations: {err:.3e}")
     plot_reflectivity(omegas, thetas, R_np, omega_c=150.0)
     plot_reflectivity(omegas, thetas, R_f, omega_c=150.0)
 

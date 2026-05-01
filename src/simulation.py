@@ -120,8 +120,9 @@ def _forward(
     green_multi = green_multi.reshape((Ns * Nr, Nw))
 
     dist_direct = acq.distances_direct()
-    green_multi += green2d(param.omegas, vp_top, dist_direct)
+    green_multi += green2d(param.omegas, vp_top, dist_direct) # add direct wave contribution
     if config.free_surface:
+        # with free surface, add contribution from the ghost source
         dist_ghost = acq.distances_ghost()
         green_multi -= green2d(param.omegas, vp_top, dist_ghost)
 
