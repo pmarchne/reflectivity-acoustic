@@ -65,7 +65,7 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
     )
 
     # std_noise will be relative to the normalized peak (1.0)
-    d_obs_final, std_noise = add_noise(d_obs_fd, noise_level=0.1)
+    d_obs_final, std_noise = add_noise(d_obs_fd, noise_level=0.1, seed=42)
 
     # 4. Consistency Check
     d_fwd, _ = sim.forward(layers)

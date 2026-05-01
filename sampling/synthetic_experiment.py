@@ -36,7 +36,7 @@ def prepare_synthetic_model():
 
     # 2. Generate Synthetic "Observed" Data
     d_clean, _ = sim.forward(layers)
-    d_obs, std_noise = add_noise(d_clean.squeeze(), noise_level=0.15)
+    d_obs, std_noise = add_noise(d_clean.squeeze(), noise_level=0.15, seed=42)
 
     # 3. Prior Parameters
     mu_prior = np.array([3500.0, 3500.0, 3500.0, 3500.0])
