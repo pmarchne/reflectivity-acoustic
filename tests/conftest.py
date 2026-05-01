@@ -19,7 +19,6 @@ def config_fft():
 def config_fd():
     return Config(
         n_receivers=57,
-        noise_level=0.1,
         x_min=0.0,
         x_max=700.0,
         z_rec=75.0,

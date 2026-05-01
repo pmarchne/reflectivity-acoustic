@@ -29,7 +29,6 @@ class Config:
     source_deriv: bool = True
 
     # Noise
-    noise_level: float = 0.1
     seed: int | None = None
 
     # ---------- Validation ----------
@@ -46,7 +45,5 @@ class Config:
             raise ValueError("nq_prop must be > 0")
         if self.nq_evan <= 0:
             raise ValueError("nq_evan must be > 0")
-        if self.noise_level < 0:
-            raise ValueError("noise_level must be >= 0")
         if self.delay < 0:
             raise ValueError("delay must be >= 0")

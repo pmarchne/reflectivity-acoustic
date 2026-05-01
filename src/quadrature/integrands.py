@@ -1,13 +1,9 @@
 import numpy as np
-import numba as nb
-
-from src.quadrature.filon import g, g_prime
 
 
-@nb.njit(fastmath=True)
-def integrand_prop(theta, k0, z_abs, x, R_func):
+def integrand(kx, k0, z_abs, x, r_func):
     """integrand: R(theta) * exp(i * k0 * g(theta))"""
-    R_val = R_func(theta)
-    cos_t = np.cos(theta)
-    sin_t = np.sin(theta)
-    return R_val * np.exp(1j * k0 * g(cos_t, sin_t, z_abs, x))
+    r_val = r_func(kx)
+    kz = np.sqrt(k0**2 - kx**2 + 0j)
+    den = 2.*1j*kz
+    return (r_val / den) * np.exp(1j * kz * z_abs)  * np.exp(1j * kx * x)

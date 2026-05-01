@@ -9,7 +9,7 @@ def get_weights(a, b, npts):
     return weights, points, jac
 
 
-def gauss_legendre_quad(a, b, npts, k0, z_abs, x, R_func, integrand):
+def gauss_legendre_quad(a, b, npts, k0, z_abs, x, R, integrand):
     """
     Gauss-Legendre quadrature of `integrand` over [a, b].
 
@@ -27,6 +27,7 @@ def gauss_legendre_quad(a, b, npts, k0, z_abs, x, R_func, integrand):
     -------
     scalar complex approximation of the integral
     """
-    weights, points, jac = get_weights(a, b, npts)
-    F = integrand(points, k0, z_abs, x, R_func)
-    return jac * np.sum(weights * F)
+    t, w = roots_legendre(npts)
+    pts = 0.5*(b - a)*t + 0.5*(b + a)
+    F = integrand(pts[:, None], k0, z_abs, x, R)
+    return 0.5*(b - a) * (w @ F)

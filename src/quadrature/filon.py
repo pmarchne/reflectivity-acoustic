@@ -1,5 +1,6 @@
 import numpy as np
 import numba as nb
+from src.quadrature.gauss_lobatto import gauss_lobatto_nodes
 
 """ 
 Propagative regime : after the substitution kx = k0 sin(theta), the 2D Sommerfeld integral takes the form
@@ -69,49 +70,62 @@ def compute_filon_single(t, n):
     return out
 
 
-#   Precompute V^{-1} for an order (3,4,5 pts)
-def precompute_Vinv(order):
-    """Return the inverse Vandermonde matrix for standard nodes on [-1,1]."""
-    if order == "quadratic":  # 3 points
+def nodes_and_endpoint_policy(order):
+    if order == "quadratic":
         nodes = np.array([-1, 0, 1], dtype=float)
-    elif order == "cubic":  # 4 points
-        nodes = np.array([-1, -1 / 3, 1 / 3, 1], dtype=float)
-    elif order == "quartic":  # 5 points
-        nodes = np.array([-1, -1 / 2, 0, 1 / 2, 1], dtype=float)
+        share_endpoints = True
+    elif order == "cubic":
+        nodes = np.array([-1, -1/3, 1/3, 1], dtype=float)
+        share_endpoints = True
+    elif order == "quartic":
+        nodes = np.array([-1, -1/2, 0, 1/2, 1], dtype=float)
+        share_endpoints = True
     elif order == "chebychev":
-        n = 6
-        nodes = np.cos((2 * np.arange(n) + 1) * np.pi / (2 * n))
+        n = 6 # TO DO : parameterize later
+        nodes = np.cos((2*np.arange(n)+1)*np.pi/(2*n))
+        share_endpoints = False
+    elif order == "gauss_lobatto":
+        n = 8  # TO DO : parameterize later
+        nodes = gauss_lobatto_nodes(n)
+        share_endpoints = True
     else:
-        raise ValueError("order must be 'quadratic', 'cubic', or 'quartic'")
-
-    n = len(nodes)
-    V = np.vander(nodes, N=n, increasing=True).T
-    return np.linalg.inv(V), nodes
+        raise ValueError("invalid order")
+    return nodes, share_endpoints
 
 
 def precompute_quadrature_points(thetas, order):
-    Vinv, nodes = precompute_Vinv(order)
-    n_nodes = nodes.size
+    nodes, share = nodes_and_endpoint_policy(order)
+    Vinv = np.linalg.inv(np.vander(nodes, N=len(nodes), increasing=True).T)
     thetas = np.asarray(thetas)
-    Nint = thetas.size - 1
-
+    Nint = len(thetas) - 1
     all_points = []
-    global_idx = np.empty((Nint, n_nodes), dtype=np.int64)
-
+    global_idx = np.empty((Nint, len(nodes)), dtype=np.int64)
     cur = 0
+
     for i in range(Nint):
         a, b = thetas[i], thetas[i + 1]
         h = (b - a) / 2.0
         c = (a + b) / 2.0
         interval_points = c + h * nodes
-        start_idx = cur
-        # extend
-        all_points.extend(interval_points.tolist())
-        cur += n_nodes
-        # fill global_idx for interval i
-        for j in range(n_nodes):
-            global_idx[i, j] = start_idx + j
-
+        if i == 0:
+            pts = interval_points
+            offset = 0
+        else:
+            if share:
+                # drop left endpoint
+                pts = interval_points[1:]
+                offset = cur - 1
+            else:
+                pts = interval_points
+                offset = cur
+        start = len(all_points)
+        all_points.extend(pts.tolist())
+        for j in range(len(nodes)):
+            if share and i > 0:
+                global_idx[i, j] = offset + j
+            else:
+                global_idx[i, j] = start + j
+        cur = len(all_points)
     return np.asarray(all_points), Vinv, global_idx
 
 

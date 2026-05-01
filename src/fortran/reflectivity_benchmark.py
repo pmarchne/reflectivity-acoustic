@@ -64,19 +64,10 @@ def numpy_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
 
 # --- numba implementation ---
 @nb.njit(parallel=True, fastmath=True)
-def numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
-    nlay = len(layers)
+def numba_reflectivity_p(h, vp, rho, omegas, p, free_surface=1, zr=70.0, zs=80.0):
+    nlay = len(h)
     nw = len(omegas)
     nk = len(p)
-    # unpack layers
-    h = np.empty(nlay, dtype=np.complex128)
-    vp = np.empty(nlay, dtype=np.complex128)
-    rho = np.empty(nlay, dtype=np.complex128)
-
-    for i in range(nlay):
-        h[i] = layers[i][0]
-        vp[i] = layers[i][1]
-        rho[i] = layers[i][2]
 
     p2 = p * p
     inv_vp2 = 1.0 / (vp * vp)
@@ -122,8 +113,15 @@ def numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0):
     return R
 
 
+def reflectivity_numba(layers, omegas, p, **kwargs):
+    omegas = np.asarray(omegas, dtype=np.complex128)
+    p = np.asarray(p, dtype=np.float64)
+    h, vp, rho = map(lambda x: np.asfortranarray(x, dtype=np.float64), zip(*layers))
+    R = numba_reflectivity_p(h, vp, rho, omegas, p, **kwargs)
+    return R
 
-def reflectivity_q(layers, omegas, p, **kwargs):
+
+def reflectivity(layers, omegas, p, **kwargs):
     omegas = np.asarray(omegas, dtype=np.complex128)
     p = np.asarray(p, dtype=np.float64)
     R = numpy_reflectivity_p(layers, omegas, p, **kwargs)
@@ -160,14 +158,14 @@ def benchmark():
     # warm-up
     print("warming up numpy implementation ...")
     # R_np = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
-    R_np = reflectivity_q(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+    R_np = reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
     if FORTRAN_AVAILABLE:
         print("warming up fortran implementation ...")
         # R_f = np.zeros((omegas.size, thetas.size), dtype=np.complex128)
         R_f = fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
     else:
         print("\nFortran module not available - use numba.")
-        R_f = numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+        R_f = eflectivity_numba(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
 
     # real benchmark
     print("\n ----- Benchmark ----- ")
@@ -175,7 +173,7 @@ def benchmark():
     t_np = 0.0
     for r in range(repeats):
         t0 = time.time()
-        R_np = reflectivity_q(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+        R_np = reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
         t1 = time.time()
         dt = t1 - t0
         print(f"numpy run {r+1}/{repeats} : {dt:.3f}s")
@@ -192,7 +190,7 @@ def benchmark():
             )
         else:
             print("\nFortran module not available - use numba.")
-            R_f = numba_reflectivity_p(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+            R_f = reflectivity_numba(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
         t1 = time.time()
         dt = t1 - t0
         print(f"fortran run {r+1}/{repeats} : {dt:.3f}s")
@@ -208,8 +206,8 @@ def benchmark():
 
     err = np.max(np.abs(R_np - R_f))
     print(f"Max abs error between implementations: {err:.3e}")
-    plot_reflectivity(omegas, thetas, R_np, omega_c=150.0)
-    plot_reflectivity(omegas, thetas, R_f, omega_c=150.0)
+    #plot_reflectivity(omegas, thetas, R_np, omega_c=150.0)
+    #plot_reflectivity(omegas, thetas, R_f, omega_c=150.0)
 
 
 if __name__ == "__main__":

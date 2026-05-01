@@ -86,7 +86,6 @@ def test_adj_reflectivity_benchmark():
 def test_fd_reflectivity(layered_model):
     config = Config(
         n_receivers=16,
-        noise_level=1.0,
         x_min=0.0,
         x_max=700.0,
         z_rec=75.0,

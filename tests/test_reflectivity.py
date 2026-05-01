@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from src.utilities import timer
-from src.fortran.reflectivity_benchmark import reflectivity_q, fortran_reflectivity
+from src.fortran.reflectivity_benchmark import reflectivity, fortran_reflectivity
 from src.simulation import Simulation
 
 
@@ -24,7 +24,7 @@ def test_reflectivity_benchmark():
     repeats = 5
     for r in range(repeats):
         with timer(f"numpy run {r + 1}: ", True):
-            r_np = reflectivity_q(layers, omegas, p,
+            r_np = reflectivity(layers, omegas, p,
                                   free_surface=1,
                                   zr=70.0, zs=80.0)
         with timer(f"fortran run {r + 1}: ", True):
@@ -40,7 +40,7 @@ def test_reflectivity_benchmark():
 
 def test_fd_reflectivity(param_fd, config_fd, layered_model):
     base_dir = Path(__file__).resolve().parents[1]
-    file_path = base_dir / "FD_comparison" / "fsismos_P0000"
+    file_path = base_dir / "FD_comparison" / "data" / "seis_v1_fs"
     if not file_path.exists():
         pytest.skip(f"Missing reference file: {file_path}")
 

@@ -143,8 +143,8 @@ def _gradient(residual, layers, source_freq, config, param, cache):
     adj_acc_evan = -adj_green / (4.0 * np.pi)
     adj_acc_prop = 1j * adj_green / (4.0 * np.pi)
 
-    adj_R_prop = _prop_adjoint(adj_acc_prop, cache["weights_prop"])
-    adj_R_evan = _evan_adjoint(adj_acc_evan, cache["kernel_evan"])
+    adj_R_prop = _accum_adjoint(adj_acc_prop, cache["weights_prop"])
+    adj_R_evan = _accum_adjoint(adj_acc_evan, cache["kernel_evan"])
 
     _, dR_dvp_prop, dR_drho_prop = fortran_reflectivity_adj(
         layers,
@@ -178,28 +178,14 @@ def _sum_gradient(seed_prop, dR_dm_prop, seed_evan, dR_dm_evan):
 
 
 @nb.njit(parallel=True, fastmath=True)
-def _prop_adjoint(adj_acc_prop, weights_prop):
-    Np, Nw, Nq = weights_prop.shape
+def _accum_adjoint(adj_acc, weights):
+    Np, Nw, Nq = weights.shape
     out = np.zeros((Nw, Nq), dtype=np.complex128)
     for w in nb.prange(Nw):
         row = np.zeros(Nq, dtype=np.complex128)
         for p in range(Np):
-            a = adj_acc_prop[p, w]
+            a = adj_acc[p, w]
             for q in range(Nq):
-                row[q] += np.conj(weights_prop[p, w, q]) * a
-        out[w, :] = row
-    return out
-
-
-@nb.njit(parallel=True, fastmath=True)
-def _evan_adjoint(adj_acc_evan, kernel_evan):
-    Np, Nw, Nq = kernel_evan.shape
-    out = np.zeros((Nw, Nq), dtype=np.complex128)
-    for w in nb.prange(Nw):
-        row = np.zeros(Nq, dtype=np.complex128)
-        for p in range(Np):
-            a = adj_acc_evan[p, w]
-            for q in range(Nq):
-                row[q] += np.conj(kernel_evan[p, w, q]) * a
+                row[q] += np.conj(weights[p, w, q]) * a
         out[w, :] = row
     return out
