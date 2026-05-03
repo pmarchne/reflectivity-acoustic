@@ -31,155 +31,164 @@ def g_prime(cos_t, sin_t, z_abs, x):
     return -z_abs * sin_t + x * cos_t
 
 
-@nb.njit(fastmath=True)
-def compute_filon_single(t, n):
-    out = np.zeros(n, dtype=np.complex128)
-
-    # small-theta closed forms if |t| < 0.25
-    if abs(t) < 0.25:
-        # up to 8 known values
-        small = (2.0, 0.0, 2.0 / 3.0, 0.0, 2.0 / 5.0, 0.0, 2.0 / 7.0, 0.0)
-        for k in range(n):
-            out[k] = small[k]
-        return out
-
-    s = np.sin(t)
-    c = np.cos(t)
-    t2 = t * t
-    t3 = t2 * t
-    t4 = t2 * t2
-    t5 = t4 * t
-    t6 = t3 * t3
-
-    if n > 0:
-        out[0] = 2 * s / t
-    if n > 1:
-        out[1] = 2j * (-t * c + s) / t2
-    if n > 2:
-        out[2] = 2 * (t2 * s + 2 * t * c - 2 * s) / t3
-    if n > 3:
-        out[3] = 2j * (-t3 * c + 3 * t2 * s + 6 * t * c - 6 * s) / t4
-    if n > 4:
-        out[4] = 2 * (t4 * s + 4 * t3 * c - 12 * t2 * s - 24 * t * c + 24 * s) / t5
-    if n > 5:
-        out[5] = (
-            2j
-            * (-t5 * c + 5 * t4 * s + 20 * t3 * c - 60 * t2 * s - 120 * t * c + 120 * s)
-            / t6
-        )
-    return out
-
-
-def nodes_and_endpoint_policy(order):
-    if order == "quadratic":
-        nodes = np.array([-1, 0, 1], dtype=float)
+def nodes_and_endpoint_policy(kind="chebychev", n=6):
+    if kind == "quadratic":
+        nodes = np.array([-1.0, 0.0, 1.0], dtype=float)
+        n = 3
         share_endpoints = True
-    elif order == "cubic":
-        nodes = np.array([-1, -1/3, 1/3, 1], dtype=float)
+
+    elif kind == "cubic":
+        nodes = np.array([-1.0, -1.0 / 3.0, 1.0 / 3.0, 1.0], dtype=float)
+        n = 4
         share_endpoints = True
-    elif order == "quartic":
-        nodes = np.array([-1, -1/2, 0, 1/2, 1], dtype=float)
+
+    elif kind == "quartic":
+        nodes = np.array([-1.0, -1.0 / 2.0, 0.0, 1.0 / 2.0, 1.0], dtype=float)
+        n = 5
         share_endpoints = True
-    elif order == "chebychev":
-        n = 6 # TO DO : parameterize later
-        nodes = np.cos((2*np.arange(n)+1)*np.pi/(2*n))
+
+    elif kind == "chebychev":
+        nodes = np.cos((2 * np.arange(n) + 1) * np.pi / (2 * n))
         share_endpoints = False
-    elif order == "gauss_lobatto":
-        n = 8  # TO DO : parameterize later
+
+    elif kind == "gauss_lobatto":
         nodes = gauss_lobatto_nodes(n)
         share_endpoints = True
     else:
-        raise ValueError("invalid order")
+        raise ValueError("invalid rule")
+
     return nodes, share_endpoints
 
 
-def precompute_quadrature_points(thetas, order):
-    nodes, share = nodes_and_endpoint_policy(order)
-    Vinv = np.linalg.inv(np.vander(nodes, N=len(nodes), increasing=True).T)
-    thetas = np.asarray(thetas)
-    Nint = len(thetas) - 1
-    all_points = []
-    global_idx = np.empty((Nint, len(nodes)), dtype=np.int64)
-    cur = 0
+def build_filon_rule(thetas, kind="chebychev", n=6):
+    """
+    Build the small setup object used by the propagative kernel.
+
+    Returns a dict with:
+      nodes, share_endpoints, T, n_nodes, theta_eval
+    """
+    nodes, share = nodes_and_endpoint_policy(kind, n)
+    n = nodes.size
+
+    # nodal values -> coefficients in power basis on [-1,1]
+    V = np.vander(nodes, N=n, increasing=True).T
+    T = np.linalg.solve(V, np.eye(n))
+
+    thetas = np.asarray(thetas, dtype=np.float64)
+    Nint = thetas.size - 1
+    theta_panel = np.empty((Nint, n), dtype=np.float64)
 
     for i in range(Nint):
         a, b = thetas[i], thetas[i + 1]
-        h = (b - a) / 2.0
-        c = (a + b) / 2.0
-        interval_points = c + h * nodes
-        if i == 0:
-            pts = interval_points
-            offset = 0
-        else:
-            if share:
-                # drop left endpoint
-                pts = interval_points[1:]
-                offset = cur - 1
-            else:
-                pts = interval_points
-                offset = cur
-        start = len(all_points)
-        all_points.extend(pts.tolist())
-        for j in range(len(nodes)):
-            if share and i > 0:
-                global_idx[i, j] = offset + j
-            else:
-                global_idx[i, j] = start + j
-        cur = len(all_points)
-    return np.asarray(all_points), Vinv, global_idx
-
-
-@nb.njit(parallel=True, fastmath=True)
-def get_weights_filon_numba(k0_vec, z, x, thetas, Vinv, global_idx, Weights):
-    """
-    Compute weights and directly assemble them to global quadrature nodes.
-
-    Returns:
-      Weights : array (Nw, Nquad) complex128
-    """
-    Nw = k0_vec.size
-    Nint = thetas.size - 1
-    n_nodes = Vinv.shape[0]
-
-    # output: Nw x Nquad
-    Weights[:] = 0.0 + 0.0j
-
-    for i in nb.prange(Nint):
-        a = thetas[i]
-        b = thetas[i + 1]
         h = 0.5 * (b - a)
         c = 0.5 * (a + b)
-        cos_c = np.cos(c)
-        sin_c = np.sin(c)
-        G = g(cos_c, sin_c, z, x)
-        Gp = g_prime(cos_c, sin_c, z, x)
+        vals = c + h * nodes
+        # enforce endpoints
+        if share:
+            vals[0] = a
+            vals[-1] = b
+        theta_panel[i, :] = vals
 
-        # loop over frequencies
+    theta_flat = theta_panel.ravel()
+    if share:
+        theta_unique, inverse = np.unique(theta_flat, return_inverse=True)
+    else:
+        theta_unique = theta_flat
+        inverse = np.arange(theta_flat.size)
+
+
+    return {
+        "kind": kind,
+        "nodes": nodes,
+        "share_endpoints": share,
+        "T": T,
+        "theta_eval": theta_unique,
+        "inverse": inverse,
+    }
+
+
+@nb.njit(cache=True, inline='always')
+def filon_moments(t, M):
+    n_nodes = M.shape[0]
+
+    # small-t series for stability
+    if abs(t) < 0.25:
+        K = 12
+        for m in range(n_nodes):
+            acc = 0.0 + 0.0j
+            it_pow = 1.0 + 0.0j
+            fact = 1.0
+            for k in range(K + 1):
+                power = m + k
+                if (power & 1) == 0:
+                    acc += it_pow * (2.0 / (power + 1.0)) / fact
+                it_pow *= 1j * t
+                fact *= (k + 1.0)
+            M[m] = acc
+        return
+
+    et = np.exp(1j * t)
+    em = np.exp(-1j * t)
+    it = 1.0 / (1j * t)
+
+    M[0] = (et - em) * it
+
+    for m in range(1, n_nodes):
+        sign = 1.0 if (m & 1) == 0 else -1.0
+        boundary = et - sign * em
+        M[m] = boundary * it - (m * it) * M[m - 1]
+
+
+@nb.njit(parallel=True, fastmath=True, cache=True)
+def transform_reflectivity(rmap, Nint, n_nodes, T, index_map):
+    Nw = rmap.shape[0]
+    R_trans = np.empty((Nint, Nw, n_nodes), dtype=np.complex128)
+    for i in nb.prange(Nint):
+        base = i * n_nodes
         for w in range(Nw):
-            k0 = k0_vec[w]
-            theta = Gp * k0 * h  # scalar
-            phase = np.exp(1j * G * k0)
-            tmp = compute_filon_single(theta, n_nodes)  # shape (n_nodes,)
-            for l in range(n_nodes):
+            for m in range(n_nodes):
                 s = 0.0 + 0.0j
+                for l in range(n_nodes):
+                    idx = index_map[base + l]
+                    s += T[l, m] * rmap[w, idx]
+                R_trans[i, w, m] = s
+    return R_trans
+
+
+@nb.njit(parallel=True, fastmath=True, cache=True)
+def compute_prop_direct(dz_vec, dx_vec, k0_vec, thetas, R_trans):
+    Np = dz_vec.size
+    Nw = k0_vec.size
+    Nint = thetas.size - 1
+    n_nodes = R_trans.shape[2]
+
+    acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
+
+    # precompute geometry
+    mid_thetas = 0.5 * (thetas[:-1] + thetas[1:])
+    h_vec = 0.5 * (thetas[1:] - thetas[:-1])
+    cos_c = np.cos(mid_thetas)
+    sin_c = np.sin(mid_thetas)
+
+    for p in nb.prange(Np):
+        dz = dz_vec[p]
+        dx = dx_vec[p]
+        res_p = np.zeros(Nw, dtype=np.complex128)
+        M = np.empty(n_nodes, dtype=np.complex128) 
+        for i in range(Nint):
+            h = h_vec[i]
+            G = dz * cos_c[i] + dx * sin_c[i]
+            Gp = -dz * sin_c[i] + dx * cos_c[i]
+            t_factor = Gp * h
+            for w in range(Nw):
+                k0 = k0_vec[w]
+                t = t_factor * k0
+                filon_moments(t, M)
+                phase = np.exp(1j * G * k0)
+                s = 0.0 + 0.0j
+                coeff = R_trans[i, w]  # contiguous over m
                 for m in range(n_nodes):
-                    s += tmp[m] * Vinv[l, m]
-                gidx = global_idx[i, l]
-                Weights[w, gidx] += s * h * phase
-    return Weights
-
-
-def get_weights_filon(k0_vec, z, x, thetas, Vinv, global_idx, weights):
-    """
-    Wrapper: ensures types and calls numba kernel.
-    Inputs:
-      Vinv: (n_nodes, n_nodes) complex128
-      global_idx: (Nint, n_nodes) int64 mapping
-    """
-    # Ensure arrays are the right dtype
-    k0_vec = np.ascontiguousarray(k0_vec, dtype=np.complex128)
-    thetas = np.ascontiguousarray(thetas, dtype=np.float64)
-    Vinv = np.ascontiguousarray(Vinv, dtype=np.float64)
-    global_idx = np.ascontiguousarray(global_idx, dtype=np.int64)
-
-    return get_weights_filon_numba(k0_vec, z, x, thetas, Vinv, global_idx, weights)
+                    s += M[m] * coeff[m]
+                res_p[w] += h * phase * s
+        acc_prop[p, :] = res_p
+    return acc_prop
