@@ -12,11 +12,10 @@ dependencies = [
     "scipy",
     "matplotlib",
     "numba",
-    "ultranest",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "black"]
+dev = ["pytest", "black", "ultranest"]
 
 [tool.black]
 line-length = 88
