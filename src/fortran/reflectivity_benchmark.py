@@ -165,7 +165,7 @@ def benchmark():
         R_f = fortran_reflectivity(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
     else:
         print("\nFortran module not available - use numba.")
-        R_f = eflectivity_numba(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
+        R_f = reflectivity_numba(layers, omegas, p, free_surface=1, zr=70.0, zs=80.0)
 
     # real benchmark
     print("\n ----- Benchmark ----- ")
