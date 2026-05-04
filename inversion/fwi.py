@@ -25,13 +25,13 @@ def make_fwi_objective(d_obs, layers, sim, cost_history):
             layers=lay,
             cache=cache,
         )
-        grad_opt = grad_vp[1:]  # first layer gradient is set to 0
+        grad_phi_vp = grad_vp[1:]  # first layer gradient is set to 0
         # Store cost
         cost_history.append(phi)
         vp_str = "[" + ", ".join(f"{v:7.1f}" for v in vp_vec) + "]"
         print(f"Iter {len(cost_history):>2} | misfit: {phi:.4e} | Vp: {vp_str}")
 
-        return phi, grad_opt
+        return phi, grad_phi_vp
 
     return fwi_objective
 

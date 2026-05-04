@@ -90,12 +90,14 @@ def plot_reflectivity_complex_plane(R_mesh, theta_re, theta_im, title="Reflectio
     # 4. Generate Plot
     fig, ax = plt.subplots(figsize=(6, 5))
     
-    extent = [theta_re.min(), theta_re.max(), theta_im.min(), theta_im.max()]
+    theta_re_deg = np.degrees(theta_re)
+    theta_im_deg = np.degrees(theta_im)
+    extent = [theta_re_deg.min(), theta_re_deg.max(), theta_im_deg.min(), theta_im_deg.max()]
     ax.imshow(RGB, extent=extent, origin='lower', aspect='auto', interpolation='bilinear')
     
     ax.set_title(title)
-    ax.set_xlabel(r"Re($\theta$)")
-    ax.set_ylabel(r"Im($\theta$)")
+    ax.set_xlabel(r"Re($\theta$) (deg)")
+    ax.set_ylabel(r"Im($\theta$) (deg)")
 
     # Add a custom colorbar for Phase
     norm = Normalize(0, 2*np.pi)

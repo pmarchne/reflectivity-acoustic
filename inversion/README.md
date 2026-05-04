@@ -10,4 +10,4 @@ Layered 1D Full Waveform Inversion using the **adjoint-state method**.
 ### Usage
 Run the script to start the optimization:
 ```bash
-python3 FWI.py
+python3 fwi.py

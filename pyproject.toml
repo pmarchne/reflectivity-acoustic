@@ -23,7 +23,7 @@ target-version = ["py310"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["src*", "sampling*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

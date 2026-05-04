@@ -81,37 +81,36 @@ def low_freq_taper(omegas, omega_min):
     return taper
 
 
-def get_critical_angles(layers):
+def get_critical_angles(layers, include_non_adjacent=False):
     """
-    Compute the critical angle at each interface.
-
-    The critical angle at interface i→i+1 is defined as:
-        θ_c = arcsin(vp[i] / vp[i+1])
-    and only exists when vp[i+1] > vp[i] (velocity increase downward).
-
-    Parameters:
-        layers: list of Layer objects or (h, vp, rho) tuples.
+    Compute critical angles.
+    If include_non_adjacent=True:
+        Also compute for all deeper layers (i → j, j > i).
     Returns:
-        list of (interface_index, critical_angle_degrees or None).
+        list of (i, j, critical_angle_degrees or None)
     """
-
     _, vps, _ = to_arrays(layers)
     results = []
-    for i in range(len(vps) - 1):
-        v1, v2 = vps[i], vps[i + 1]
-        if v2 > v1:
-            theta_c = np.degrees(np.arcsin(v1 / v2))
-            print(
-                f"Interface {i}→{i+1}: vp {v1:.0f}→{v2:.0f} m/s, "
-                f"critical angle = {theta_c:.2f}°"
-            )
-            results.append((i, theta_c))
-        else:
-            print(
-                f"Interface {i}→{i+1}: vp {v1:.0f}→{v2:.0f} m/s, "
-                f"no critical angle (velocity decrease)"
-            )
-            results.append((i, None))
+    n = len(vps)
+    for i in range(n - 1):
+        for j in range(i + 1, n):
+            # Skip non-adjacent if not requested
+            if not include_non_adjacent and j != i + 1:
+                continue
+            v1, v2 = vps[i], vps[j]
+            if v2 > v1:
+                theta_c = np.degrees(np.arcsin(v1 / v2))
+                print(
+                    f"Layers {i}→{j}: vp {v1:.0f}→{v2:.0f} m/s, "
+                    f"critical angle = {theta_c:.2f}°"
+                )
+                results.append((i, j, theta_c))
+            else:
+                print(
+                    f"Layers {i}→{j}: vp {v1:.0f}→{v2:.0f} m/s, "
+                    f"no critical angle (velocity decrease)"
+                )
+                results.append((i, j, None))
     return results
 
 
