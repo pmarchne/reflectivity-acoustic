@@ -2,10 +2,12 @@ import os
 import pickle
 import numpy as np
 import ultranest
+import ultranest.stepsampler
+import h5py
 # from ultranest.plot import cornerplot
 from scipy.stats import truncnorm
-from synthetic_experiment import prepare_synthetic_model
-# from fd_data_experiment import prepare_fd_model
+# from synthetic_experiment import prepare_synthetic_model
+from fd_data_experiment import prepare_fd_model
 from src.utilities import timer
 
 
@@ -101,29 +103,46 @@ def run_ultranest_inference(bayes, v_true, prior_mode='gaussian'):
 
     param_names = [f"Vp_{i+1}" for i in range(len(v_true))]
 
+    save_dir = "ultranest_FD_TOYxDAC"
     sampler = ultranest.ReactiveNestedSampler(
         param_names,
         log_likelihood,
         prior_transform,
+        log_dir = save_dir,
+        resume = "overwrite",
     )
 
-    result = sampler.run(min_ess=500, min_num_live_points=300)  # 1000
+    sampler.stepsampler = ultranest.stepsampler.SliceSampler(
+        nsteps             = 4 * len(v_true),
+        generate_direction = ultranest.stepsampler.generate_mixture_random_direction,
+    )
+
+    result = sampler.run(min_num_live_points=800, dlogz=0.5, min_ess=2000, update_interval_volume_fraction=0.4, max_num_improvement_loops=5)  # 1000
     sampler.print_results()
 
-    filename = 'results_ultranest_synthetic_noise015_cov1000_fs'
+    print(f"\nEqual-weighted posterior samples: {samples.shape}")
+    print(f"Effective sample size (ESS): {result['ess']:.0f}")
+    print(f"log Z = {result['logz']:.3f} ± {result['logzerr']:.3f}")
+
+    filename = save_dir+'results_ultranest'
     with open(filename + '.pkl', 'wb') as fp:
         pickle.dump(result, fp)
         print("results saved !")
-    # cornerplot(result, plot_density=True, title_kwargs={"fontsize": 16})
-    # plt.show()
+    
+    sampler.plot_run()
+    sampler.plot_trace()
+    sampler.plot_corner() 
 
 
 if __name__ == "__main__":
+    seed = 42
+    np.random.seed(seed)
     # Link to the experiment file
-    v_ref = np.array([3500.0, 1800.0, 2300.0, 4000.0])
-    bayes_model = prepare_synthetic_model()
-    # v_ref = np.array([1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
-    # bayes_model = prepare_fd_model()
+    # v_ref = np.array([3500.0, 1800.0, 2300.0, 4000.0])
+    #bayes_model = prepare_synthetic_model()
+    v_ref = np.array([1603.0, 1749.0, 2019.0, 2179.0, 1900.0, 2265.0, 3281.0])
+    path = "FD_comparison/data/seis_v1_nofs"
+    bayes_model = prepare_fd_model(file_path=path, seed=seed)
     print("n cpu : ", os.cpu_count())
     # Launch UltraNest
     run_ultranest_inference(bayes_model, v_true=v_ref, prior_mode='gaussian')

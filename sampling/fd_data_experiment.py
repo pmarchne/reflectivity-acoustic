@@ -5,10 +5,10 @@ from posterior import FWIPosterior
 from src.io_utils import read_fd_observations
 from src.config import Config
 from src.simulation import Simulation
-from src.noise import add_noise
+from src.noise import add_noise_snr
 from src.utilities import estimate_neff
 from src.layers import create_layers_from_interfaces
-
+from src.plot.plot_tools import plot_seismogram
 
 def compute_receiver_nrmse(obs, fwd):
     """Vectorized NRMSE calculation."""
@@ -17,7 +17,7 @@ def compute_receiver_nrmse(obs, fwd):
     return rmse / (data_range + 1e-10)
 
 
-def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
+def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs", seed=42):
     """
     Sets up the Bayesian FWI model using external FD observations.
     """
@@ -31,7 +31,7 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
         z_rec=75.0,
         z_src=50.0,
         x_src=100.0,
-        nq_prop=64,
+        nq_prop=256,
         nq_evan=64,
         f0=10.0,
         ind_traces=indices,
@@ -40,7 +40,7 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
         epsilon=1.5,
         source_deriv=True,
         free_surface=False,
-        nfft_pad_factor=4,
+        nfft_pad_factor=1,
     )
 
     # Geologic Model
@@ -65,7 +65,7 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
     )
 
     # std_noise will be relative to the normalized peak (1.0)
-    d_obs_final, std_noise = add_noise(d_obs_fd, noise_level=0.1, seed=42)
+    d_obs_final, std_noise = add_noise_snr(d_obs_fd, snr_db=15, seed=seed)
 
     # 4. Consistency Check
     d_fwd, _ = sim.forward(layers)
@@ -81,6 +81,28 @@ def prepare_fd_model(file_path="FD_comparison/fsismos_P0000_nofs"):
     print(f"Reflectivity Scale Factor: {scale:.2e}")
     print(f"Mean NRMSE: {np.mean(nrmse)*100:.2f}%")
     print(f"Estimated Noise Std: {std_noise:.4f}")
+
+    plot_seismogram(d_obs_final.T, sim.acq.xr, sim.param.time, vmin=-0.15, vmax=0.15, ncolors=256, figsize=(5,5))
+
+    '''vps_tmp = np.array([1505.0, 1903.0, 2749.0, 2819.0, 1979.0, 2000.0, 3265.0, 2281.0])
+    lays = create_layers_from_interfaces(z_int, vps_tmp, rhos)
+    d_tmp, _ = sim.forward(lays)
+    d_tmp = d_tmp.squeeze() / scale
+    plot_seismogram(d_tmp.T, sim.acq.xr, sim.param.time, vmin=-0.15, vmax=0.15, ncolors=256, figsize=(5,5))
+
+    vps_tmp = np.array([1505.0, 1403.0, 1749.0, 1819.0, 3979.0, 3000.0, 1265.0, 3200.0])
+    lays = create_layers_from_interfaces(z_int, vps_tmp, rhos)
+    d_tmp, _ = sim.forward(lays)
+    d_tmp = d_tmp.squeeze() / scale
+    plot_seismogram(d_tmp.T, sim.acq.xr, sim.param.time, vmin=-0.15, vmax=0.15, ncolors=256, figsize=(5,5))
+
+    vps_tmp = np.array([1505.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0])
+    lays = create_layers_from_interfaces(z_int, vps_tmp, rhos)
+    d_tmp, _ = sim.forward(lays)
+    d_tmp = d_tmp.squeeze() / scale
+    plot_seismogram(d_tmp.T, sim.acq.xr, sim.param.time, vmin=-0.15, vmax=0.15, ncolors=256, figsize=(5,5))
+
+    exit(1)'''
 
     # 5. Bayesian Setup
     # Prior for Vp

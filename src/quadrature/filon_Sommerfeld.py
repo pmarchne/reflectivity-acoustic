@@ -63,8 +63,10 @@ def Sommerfeld_integral2D(
     sinh_psi, cosh_psi, psi_i, weights_ev, scaling = get_integrand_evan_param(
         kx_max_factor, Nevan
     )
-    p = np.sin(theta_eval) / vp[0]
-    ph = np.cosh(psi_i) / vp[0]
+    # p = np.sin(theta_eval) / vp[0]
+    p = np.sin(theta_eval) / np.min(vp)
+    # ph = np.cosh(psi_i) / vp[0]
+    ph = np.cosh(psi_i) / np.min(vp)
 
     # reflectivity of the stack
     R_prop = fortran_reflectivity(
@@ -82,7 +84,8 @@ def Sommerfeld_integral2D(
     # accumulators: (Np, Nwa)
     acc_prop = np.zeros((Np, Nw), dtype=np.complex128)
     acc_evan = np.zeros_like(acc_prop)
-    k0_vec = omega / vp[0]
+    # k0_vec = omega / vp[0] 
+    k0_vec = omega / np.min(vp)
     dz_vec = np.full_like(dx_vec, dz_refl)
 
     acc_prop, weights_prop = compute_prop(

@@ -49,6 +49,7 @@ The reflectivity map $R(k_x, \omega)$ is constructed recursively using interface
 - Extend implementation to **3D physics**.
 - Implement **complex contour deformation** for the Sommerfeld integral.
 - Extend to **Elastic** wave propagation.
+- Add $v_x$ and $v_z$ components
 
 ## To do list
 - scale correctly with the density
@@ -56,7 +57,7 @@ The reflectivity map $R(k_x, \omega)$ is constructed recursively using interface
 - add unit test for Sommerfeld integral
 - add quality factor $Q_p$
 - try to switch to simple precision
-  
+
 ## References
 1. Mallick, S., & Frazer, L. N. (1987). Practical aspects of reflectivity modeling. Geophysics, 52(10), 1355-1364.
 2. Muller, G. (1985). The reflectivity method: a tutorial. Journal of Geophysics, 58(1), 153-174.

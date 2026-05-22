@@ -12,6 +12,7 @@ def build_parameters(config: Config) -> Parameters:
 
     n = int(np.ceil(np.log2(config.total_time / dt)))
     nfft = 2 ** (n + 1)
+    nfft = nfft * config.nfft_pad_factor
 
     time = np.arange(nt) * dt
     freqs = np.fft.rfftfreq(nfft, d=dt)
