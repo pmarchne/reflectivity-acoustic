@@ -288,7 +288,7 @@ def plot_wiggle_traces(
     plt.show()
 
 
-def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000.0, vmax=6000.0, title="my_title"):
+def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000.0, vmax=6000.0, title=r"normalized $L^2$ misfit"):
     plt.figure(figsize=(8, 5))
     # maxZ = np.max(Z)
     contour_lines = plt.contour(
@@ -298,13 +298,13 @@ def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000.0, vmax=6000.0, title="my_t
         contour_lines, inline=True, fontsize=6, fmt="%.2f"
     )  # Add isovalue labels
     plt.contourf(X, Y, Z, levels=16, cmap="viridis_r")
-    # plt.colorbar(label="$L^2$ misfit", aspect=50)
+    plt.colorbar(label=title, aspect=50)
     plt.colorbar(aspect=50)
     plt.scatter(vp_ref1, vp_ref2, s=115, c="red", marker="*", alpha=1, edgecolors="k")
-    plt.xlabel(r"$V_{P,1}$ [m/s]")
-    plt.ylabel(r"$V_{P,2}$ [m/s]")
+    plt.xlabel(r"$v_1$ [m/s]")
+    plt.ylabel(r"$v_2$ [m/s]")
     plt.xlim([vmin, vmax])
     plt.ylim([vmin, vmax])
-    plt.title(title)
+    #plt.title(title)
     plt.tight_layout()
     # plt.show()
