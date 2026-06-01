@@ -128,27 +128,31 @@ def update_from_arrays(layers, hs=None, vps=None, rhos=None):
 
 
 def update_layer_slice(
-    layers, vp_slice=None, hs_slice=None, rho_slice=None, start=0, end=None
+    layers, vp_slice=None, hs_slice=None, rho_slice=None, startv=0, endv=None, starth=0, endh=None, startr=0, endr=None
 ):
     """
     Update slices of vp, hs, and/or rho in layers.
     """
     curr_hs, curr_vps, curr_rhos = to_arrays(layers)
 
-    if end is None:
-        end = len(curr_vps)
+    if endh is None:
+        endh = len(curr_hs) - 1
+    if endv is None:
+        endv = len(curr_vps)
+    if endr is None:
+        endr = len(curr_rhos)
 
     new_hs = curr_hs.copy()
     new_vps = curr_vps.copy()
     new_rhos = curr_rhos.copy()
 
     if hs_slice is not None:
-        new_hs[start:end] = hs_slice
+        new_hs[starth:endh] = hs_slice
 
     if vp_slice is not None:
-        new_vps[start:end] = vp_slice
+        new_vps[startv:endv] = vp_slice
 
     if rho_slice is not None:
-        new_rhos[start:end] = rho_slice
+        new_rhos[startr:endr] = rho_slice
 
     return create_layers(new_hs, new_vps, new_rhos)

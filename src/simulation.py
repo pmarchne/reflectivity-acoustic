@@ -44,19 +44,21 @@ class Simulation:
     --------
     Forward-only:
         sim = Simulation(config)
-        d_cal, _ = sim.forward(layers)
+        d_cal = sim.forward(layers)
     Forward + gradient (FWI loop)::
         sim = Simulation(config)
-        d_cal, cache   = sim.forward(layers)
-        grad_vp, _     = sim.gradient(residual[0], layers, cache)
+        d_cal = sim.forward(layers)
+        grad_vp, _     = sim.gradient(residual[0], layers, sim.cache)
     """
 
     def __init__(self, config: Config):
         self.config = config
         self.param, self.acq = build_problem(config)
         self._source_freq = source_frequency(self.param, config)
+        # cache quadrature once
+        self._cache : dict = {} # cache required by gradient
 
-    def forward(self, layers, timing: bool = False) -> tuple[np.ndarray, dict]:
+    def forward(self, layers, timing: bool = False) -> np.ndarray:
         """Compute synthetic seismogram for a given earth model.
 
         Parameters
@@ -70,14 +72,12 @@ class Simulation:
         -------
         d_cal : ndarray, shape (Ns, Nr, Nt)
             Synthetic seismogram in the time domain.
-        cache : dict
-            Intermediate arrays required by gradient.
         """
         return _forward(
-            layers, self.config, self.param, self.acq, self._source_freq, timing
+            layers, self.config, self.param, self.acq, self._source_freq, self._cache, timing
         )
 
-    def gradient(self, residual, layers, cache) -> tuple[np.ndarray, np.ndarray]:
+    def gradient(self, residual, layers) -> tuple[np.ndarray, np.ndarray]:
         """Compute parameter gradients via the adjoint state method.
 
         Parameters
@@ -96,17 +96,17 @@ class Simulation:
             Gradient of the misfit w.r.t. density.
         """
         return _gradient(
-            residual, layers, self._source_freq, self.config, self.param, cache
+            residual, layers, self._source_freq, self.config, self.param, self._cache
         )
 
 
 def _forward(
-    layers, config, param, acq, source_freq, timing
+    layers, config, param, acq, source_freq, cache, timing
 ) -> tuple[np.ndarray, dict]:
     vp_top = layers[0][1]
 
     with timer("Sommerfeld quadrature", timing):
-        green_multi, cache = Sommerfeld_integral2D(
+        green_multi = Sommerfeld_integral2D(
             layers,
             param.omegas,
             acq,
@@ -114,6 +114,7 @@ def _forward(
             config.nq_evan,
             kx_max_factor=config.kx_max_factor,
             free_surface=config.free_surface,
+            cache=cache
         )
 
     Ns, Nr, Nw = green_multi.shape
@@ -131,10 +132,14 @@ def _forward(
         response *= 1j * np.real(param.omegas)
 
     d_cal = inverse_fft_signal(response, param, config)
-    return d_cal.reshape((Ns, Nr, param.nt)), cache
+    return d_cal.reshape((Ns, Nr, param.nt))
 
 
 def _gradient(residual, layers, source_freq, config, param, cache):
+
+    if not cache:
+        raise ValueError("cache is empty ! you must precompute quadrature data.")
+    
     adj_response = adjoint_inverse_fft_signal(residual, param, config)
     if config.source_deriv:
         adj_response *= -1j * np.real(param.omegas)
@@ -146,15 +151,24 @@ def _gradient(residual, layers, source_freq, config, param, cache):
     adj_R_prop = _accum_adjoint(adj_acc_prop, cache["weights_prop"])
     adj_R_evan = _accum_adjoint(adj_acc_evan, cache["kernel_evan"])
 
-    _, dR_dvp_prop, dR_drho_prop = fortran_reflectivity_adj(
+    p_unique = cache["p_unique"]
+    inv_idx = cache["inv_idx"]
+    
+    adj_R_prop_unique = np.zeros(
+        (adj_R_prop.shape[0], len(p_unique)), 
+        dtype=adj_R_prop.dtype
+    )
+    np.add.at(adj_R_prop_unique, (slice(None), inv_idx), adj_R_prop)
+
+    _, dR_dvp_prop, dR_drho_prop, dR_dh_prop = fortran_reflectivity_adj(
         layers,
         param.omegas,
-        cache["p_prop"],
+        p_unique,
         free_surface=config.free_surface,
         zr=config.z_rec,
         zs=config.z_src,
     )
-    _, dR_dvp_evan, dR_drho_evan = fortran_reflectivity_adj(
+    _, dR_dvp_evan, dR_drho_evan, dR_dh_evan = fortran_reflectivity_adj(
         layers,
         param.omegas,
         cache["p_evan"],
@@ -163,12 +177,14 @@ def _gradient(residual, layers, source_freq, config, param, cache):
         zs=config.z_src,
     )
 
-    grad_vp = _sum_gradient(adj_R_prop, dR_dvp_prop, adj_R_evan, dR_dvp_evan)
-    grad_rho = _sum_gradient(adj_R_prop, dR_drho_prop, adj_R_evan, dR_drho_evan)
+    grad_vp = _sum_gradient(adj_R_prop_unique, dR_dvp_prop, adj_R_evan, dR_dvp_evan)
+    grad_rho = _sum_gradient(adj_R_prop_unique, dR_drho_prop, adj_R_evan, dR_drho_evan)
+    grad_h = _sum_gradient(adj_R_prop_unique, dR_dh_prop, adj_R_evan, dR_dh_evan)
 
     grad_vp[0] = 0.0  # top layer held fixed
     grad_rho[0] = 0.0
-    return grad_vp, grad_rho
+    grad_h[0] = 0.0
+    return grad_vp, grad_rho, grad_h
 
 
 def _sum_gradient(seed_prop, dR_dm_prop, seed_evan, dR_dm_evan):

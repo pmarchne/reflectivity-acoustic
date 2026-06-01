@@ -7,21 +7,17 @@ def integrand_evan_cosh(psi, k0, z_abs, x):
     phase = z_abs * np.sinh(psi) - 1j * x * np.cosh(psi)
     return np.exp(-k0 * phase)
 
-
 @nb.njit(parallel=True, fastmath=True)
-def compute_evanescent(
-    dz_vec, dx_vec, k0_vec, sinh_psi, cosh_psi, rmap_evan, weights_ev, scaling
+def get_kernel_evan(
+    dz_vec, dx_vec, k0_vec, sinh_psi, cosh_psi, weights_ev, scaling
 ):
     Np = dz_vec.size
     Nw = k0_vec.size
     Nquad = sinh_psi.size
-
     sinh_psi = sinh_psi.ravel()
     cosh_psi = cosh_psi.ravel()
     weights_ev = weights_ev.ravel()
-
     k0_vec = k0_vec.ravel()
-    acc_evan = np.zeros((Np, Nw), dtype=np.complex128)
     kernel_evan = np.zeros((Np, Nw, Nquad), dtype=np.complex128)
 
     for p in nb.prange(Np):
@@ -37,15 +33,26 @@ def compute_evanescent(
         # Loop over frequencies
         for w in range(Nw):
             k0 = k0_vec[w]
-            s = 0.0 + 0.0j
             for q in range(Nquad):
                 exp_min = np.exp(-k0 * phase_min[q])
                 exp_plus = np.exp(-k0 * phase_plus[q])
                 kernel = scaling * (exp_min + exp_plus) * weights_ev[q]
                 kernel_evan[p, w, q] = kernel  # store kernel for adjoint
-                s += kernel * rmap_evan[w, q]
+    return kernel_evan
+
+
+@nb.njit(parallel=True, fastmath=True)
+def compute_evanescent(rmap_evan, kernel_evan):
+    Np, Nw, Nquad = kernel_evan.shape
+    acc_evan = np.zeros((Np, Nw), dtype=np.complex128)
+    for p in nb.prange(Np):
+        # Loop over frequencies
+        for w in range(Nw):
+            s = 0.0 + 0.0j
+            for q in range(Nquad):
+                s += kernel_evan[p, w, q] * rmap_evan[w, q]
             acc_evan[p, w] = s  # scaling * s
-    return acc_evan, kernel_evan
+    return acc_evan
 
 
 def get_integrand_evan_param(kx_max_factor, nevan):
