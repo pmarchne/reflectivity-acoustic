@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from src.config import Config
 from src.simulation import Simulation
-from src.layers import create_layers_from_interfaces
+from src.layers import create_layers
 
 
 @pytest.fixture
@@ -71,10 +71,11 @@ def param_fft(sim_fft):
 
 @pytest.fixture
 def layered_model():
-    z_interfaces = np.array([0.0, 100.0, 200.0, 250.0, 350.0,
-                             450.0, 550.0, 650.0, 700.0])
+    #z_interfaces = np.array([0.0, 100.0, 200.0, 250.0, 350.0,
+                           #  450.0, 550.0, 650.0, 700.0])
+    heights = np.array([100., 100., 50., 100., 100., 100., 100., 50])
     vp = np.array([1505.0, 1603.0, 1749.0, 2019.0, 2179.0,
                    1900.0, 2265.0, 3281.0])
     rho = np.full_like(vp, 2000.0)
-    layers = create_layers_from_interfaces(z_interfaces, vp, rho)
+    layers = create_layers(heights, vp, rho)
     return layers

@@ -57,7 +57,7 @@ def test_fd_reflectivity(param_fd, config_fd, layered_model):
 
     # warm-up
     sim.forward(layered_model, timing=False)
-    d_cal, _ = sim.forward(layered_model, timing=True)
+    d_cal = sim.forward(layered_model, timing=True)
 
     # expected shape: (Ns, Nr, Nt)
     ref = d_cal[0]
