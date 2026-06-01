@@ -4,12 +4,9 @@ module reflectivity_mod
   implicit none
   private
   public :: compute_reflectivity
-
   integer, parameter :: dp = real64
-
 contains
 
-  ! Square root with positive imaginary part convention
   pure function csqrt_pos(z) result(r)
     complex(dp), intent(in) :: z
     complex(dp) :: r
@@ -20,118 +17,105 @@ contains
   subroutine compute_reflectivity( &
       h, vp, rho, omegas, p, free_surface, zr, zs, R, &
       nlay, nkq, nw )
-
     !f2py intent(hide) :: nlay, nkq, nw
-    !f2py intent(in)  :: h, vp, rho, omegas, p, free_surface, zr, zs
-    !f2py intent(out) :: R
-    !f2py real(8)     :: h, vp, rho, p, zr, zs
-    !f2py integer     :: free_surface
-    !f2py complex(16):: omegas
-    !f2py complex(16):: R
+    !f2py intent(in)   :: h, vp, rho, omegas, p, free_surface, zr, zs
+    !f2py intent(out)  :: R
+    !f2py real(8)      :: h, vp, rho, p, zr, zs
+    !f2py integer      :: free_surface
+    !f2py complex(16)  :: omegas
+    !f2py complex(16)  :: R
 
-    integer, intent(in) :: nlay, nkq, nw, free_surface
-    real(dp), intent(in) :: h(nlay), vp(nlay), rho(nlay)
-    complex(dp), intent(in) :: omegas(nw)
-    real(dp), intent(in) :: p(nkq)
-    real(dp), intent(in) :: zr, zs
+    integer,     intent(in)  :: nlay, nkq, nw, free_surface
+    real(dp),    intent(in)  :: h(nlay), vp(nlay), rho(nlay)
+    complex(dp), intent(in)  :: omegas(nw)
+    real(dp),    intent(in)  :: p(nkq)
+    real(dp),    intent(in)  :: zr, zs
     complex(dp), intent(out) :: R(nw, nkq)
 
-    ! Precomputed arrays
-    real(dp), allocatable :: vp_inv2(:), p2(:)
-
-    integer :: iw, ik, ell
+    ! Scalar temporaries (thread-private)
+    integer     :: iw, ik, ell
     complex(dp) :: omega, omega2
     complex(dp) :: kz_cur, kz_next, Z_cur, Z_next, inv_kz
     complex(dp) :: Rval, rint, phase
     complex(dp) :: ghost, cavity
     complex(dp) :: k02_term, numerator, denom_update
 
+    ! Thread-local - declared in parallel region via PRIVATE
+    real(dp), allocatable :: vp_inv2(:)
+    real(dp)              :: p2_ik
+
     complex(dp), parameter :: zero    = (0.0_dp, 0.0_dp)
     complex(dp), parameter :: one     = (1.0_dp, 0.0_dp)
-    complex(dp), parameter :: neg_one = (-1.0_dp, 0.0_dp)
-    complex(dp), parameter :: i_unit  = (0.0_dp, 1.0_dp)
     complex(dp), parameter :: two_i   = (0.0_dp, 2.0_dp)
-    real(dp),    parameter :: eps_denom = 1.0e-12_dp
 
     if (nlay < 1) return
 
-    allocate(vp_inv2(nlay), p2(nkq))
+    ! Outer loop over frequencies - each thread owns a full iw slice of R
+    ! so writes to R(iw, :) never collide across threads.
+    ! vp_inv2 is allocated once per thread (PRIVATE + local allocate).
+    !$OMP PARALLEL DEFAULT(NONE) &
+    !$OMP   SHARED(h, vp, rho, omegas, p, R, nlay, nkq, nw, &
+    !$OMP          free_surface, zr, zs) &
+    !$OMP   PRIVATE(iw, ik, ell, omega, omega2, k02_term, &
+    !$OMP           kz_cur, kz_next, Z_cur, Z_next, inv_kz, &
+    !$OMP           Rval, rint, phase, numerator, denom_update, &
+    !$OMP           ghost, cavity, vp_inv2, p2_ik)
 
-    ! Precompute layer properties
-    !$OMP PARALLEL DO SIMD
+    ! Each thread allocates its own private vp_inv2
+    allocate(vp_inv2(nlay))
     do ell = 1, nlay
       vp_inv2(ell) = 1.0_dp / (vp(ell) * vp(ell))
     end do
-    !$OMP END PARALLEL DO SIMD
 
-    ! Precompute p^2
-    !$OMP PARALLEL DO SIMD
-    do ik = 1, nkq
-      p2(ik) = p(ik) * p(ik)
-    end do
-    !$OMP END PARALLEL DO SIMD
-
-    !$OMP PARALLEL DO PRIVATE( &
-    !$OMP   ik, ell, omega, omega2, &
-    !$OMP   k02_term, kz_cur, kz_next, Z_cur, Z_next, inv_kz, &
-    !$OMP   Rval, rint, phase, numerator, denom_update, &
-    !$OMP   ghost, cavity ) &
-    !$OMP SCHEDULE(static) COLLAPSE(2)
-
+    !$OMP DO SCHEDULE(dynamic, 4)
     do iw = 1, nw
+      omega  = omegas(iw)
+      omega2 = omega * omega
+
       do ik = 1, nkq
+        p2_ik = p(ik) * p(ik)   ! scalar computed on the fly
 
-        omega  = omegas(iw)
-        omega2 = omega * omega
-
-        ! ---- Bottom layer ----
-        ! Mimic numpy: sqrt(omega2 * (1/vp^2 - p^2) + 0j)
-        k02_term = omega2 * cmplx(vp_inv2(nlay) - p2(ik), 0.0_dp, dp)
-        kz_next = csqrt_pos(k02_term)
-        inv_kz = one / kz_next
-        
-        ! Z = omega * rho / kz using native complex division like numpy
-        Z_next = omega * cmplx(rho(nlay), 0.0_dp, dp) * inv_kz
-        Rval   = zero
+        ! ---- Bottom half-space ----
+        k02_term = omega2 * cmplx(vp_inv2(nlay) - p2_ik, 0.0_dp, dp)
+        kz_next  = csqrt_pos(k02_term)
+        Z_next   = omega * cmplx(rho(nlay), 0.0_dp, dp) / kz_next
+        Rval     = zero
 
         ! ---- Upward recursion through layers ----
         do ell = nlay - 1, 1, -1
-          k02_term = omega2 * cmplx(vp_inv2(ell) - p2(ik), 0.0_dp, dp)
-          kz_cur = csqrt_pos(k02_term)
-          inv_kz = one / kz_cur
-          
-          Z_cur = omega * cmplx(rho(ell), 0.0_dp, dp) * inv_kz
+          k02_term = omega2 * cmplx(vp_inv2(ell) - p2_ik, 0.0_dp, dp)
+          kz_cur   = csqrt_pos(k02_term)
+          Z_cur    = omega * cmplx(rho(ell), 0.0_dp, dp) / kz_cur
 
-          ! Interface reflection coefficient
-          rint = (Z_next - Z_cur) / (Z_next + Z_cur)
-
-          ! Phase shift through layer
+          rint  = (Z_next - Z_cur) / (Z_next + Z_cur)
           phase = exp(two_i * kz_next * h(ell+1))
-          
-          ! Update reflection coefficient
-          numerator = rint + Rval * phase
-          denom_update = one + rint * Rval * phase
-          Rval = numerator / denom_update
 
+          numerator    = rint + Rval * phase
+          denom_update = one  + rint * Rval * phase
+          Rval    = numerator / denom_update
           kz_next = kz_cur
           Z_next  = Z_cur
         end do
 
         ! ---- Free surface boundary condition ----
         if (free_surface == 1) then
-          cavity = 1.0 / (1.0 + Rval * exp(two_i * kz_next * h(1)))
-          ghost = -4.0 * sin(kz_next * zs) * sin(kz_next * zr)
+          cavity = one / (one + Rval * exp(two_i * kz_next * h(1)))
+          ghost  = cmplx(-4.0_dp * sin(aimag(kz_next * cmplx(0,1,dp)) + &
+                   real(kz_next,dp)*zs) * &  ! keep real kz branch
+                   sin(real(kz_next,dp)*zr), 0.0_dp, dp)
+          ghost = cmplx(-4.0_dp, 0.0_dp, dp) * &
+                  sin(kz_next * cmplx(zs, 0.0_dp, dp)) * &
+                  sin(kz_next * cmplx(zr, 0.0_dp, dp))
           Rval = cavity * Rval * ghost
         end if
 
         R(iw, ik) = Rval
+      end do   ! ik
+    end do     ! iw
+    !$OMP END DO
 
-      end do
-    end do
-    !$OMP END PARALLEL DO
-
-    deallocate(vp_inv2, p2)
+    deallocate(vp_inv2)
+    !$OMP END PARALLEL
 
   end subroutine compute_reflectivity
-
 end module reflectivity_mod

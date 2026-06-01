@@ -18,15 +18,15 @@ contains
 
   subroutine compute_reflectivity_adj( &
       h, vp, rho, omegas, p, free_surface, zr, zs, &
-      R, dR_dvp, dR_drho, nlay, nkq, nw )
+      R, dR_dvp, dR_drho, dR_dh, nlay, nkq, nw )
 
     !f2py intent(hide) :: nlay, nkq, nw
     !f2py intent(in)  :: h, vp, rho, omegas, p, free_surface, zr, zs
-    !f2py intent(out) :: R, dR_dvp, dR_drho
+    !f2py intent(out) :: R, dR_dvp, dR_drho, dR_dh
     !f2py real(8)     :: h, vp, rho, p, zr, zs
     !f2py integer     :: free_surface
     !f2py complex(16) :: omegas
-    !f2py complex(16) :: R, dR_dvp, dR_drho
+    !f2py complex(16) :: R, dR_dvp, dR_drho, dR_dh
 
     integer, intent(in) :: nlay, nkq, nw, free_surface
     real(dp),    intent(in)  :: h(nlay), vp(nlay), rho(nlay)
@@ -36,6 +36,7 @@ contains
     complex(dp),  intent(out) :: R(nw, nkq)
     complex(dp),  intent(out) :: dR_dvp(nw, nkq, nlay)
     complex(dp),  intent(out) :: dR_drho(nw, nkq, nlay)
+    complex(dp),  intent(out) :: dR_dh(nw, nkq, nlay)
 
     real(dp), allocatable :: vp_inv2(:), vp_inv3(:), p2(:)
 
@@ -72,14 +73,15 @@ contains
     !$OMP   ghost, cavity, dkz_dvp, dZ_dvp, dZ_drho, inv_kz )
     block
       complex(dp), allocatable :: kz(:), Z(:), Rstep(:), phase(:)
-      complex(dp), allocatable :: adj_kz(:), adj_Z(:)
+      complex(dp), allocatable :: adj_kz(:), adj_Z(:), adj_h(:)
       complex(dp) :: adj_out, adj_cavity, adj_Rstep0, adj_ghost, adj_current
       complex(dp) :: adj_t, adj_s0
       complex(dp) :: t, q, x, D, B, invB2
       complex(dp) :: adj_rloc, adj_x, adj_q
       complex(dp) :: dghost_dkz
 
-      allocate(kz(nlay), Z(nlay), Rstep(nlay), phase(nlay), adj_kz(nlay), adj_Z(nlay))
+      allocate(kz(nlay), Z(nlay), Rstep(nlay), phase(nlay), &
+               adj_kz(nlay), adj_Z(nlay), adj_h(nlay))
 
       !$OMP DO COLLAPSE(2) SCHEDULE(static)
       do iw = 1, nw
@@ -87,6 +89,7 @@ contains
 
           adj_kz = zero
           adj_Z  = zero
+          adj_h  = zero
 
           omega  = omegas(iw)
           omega2 = omega * omega
@@ -139,13 +142,14 @@ contains
             adj_Rstep0 = adj_Rstep0 + adj_t * phase(1)
             adj_s0 = adj_t * Rstep(1)
 
+            adj_kz(1) = adj_kz(1) + adj_s0 * (two_i * h(1) * phase(1))
+            adj_h(1)  = adj_h(1)  + adj_s0 * (two_i * kz(1) * phase(1))
+
             dghost_dkz = -4.0_dp * ( &
                 cos(kz(1) * zs) * zs * sin(kz(1) * zr) + &
                 sin(kz(1) * zs) * cos(kz(1) * zr) * zr )
 
-            adj_kz(1) = adj_kz(1) + &
-                adj_s0 * (two_i * h(1) * phase(1)) + &
-                adj_ghost * dghost_dkz
+            adj_kz(1) = adj_kz(1) + adj_ghost * dghost_dkz
 
             adj_current = adj_Rstep0
           else
@@ -170,6 +174,7 @@ contains
             adj_Z(ell)     = adj_Z(ell)     + adj_rloc * (-2.0_dp * Z(ell + 1)) * invB2
 
             adj_kz(ell + 1) = adj_kz(ell + 1) + adj_q * (two_i * h(ell + 1) * q)
+            adj_h(ell + 1)  = adj_h(ell + 1)  + adj_q * (two_i * kz(ell + 1) * q)
 
             adj_current = adj_x
           end do
@@ -183,13 +188,14 @@ contains
 
             dR_dvp(iw, ik, ell)  = adj_kz(ell) * dkz_dvp + adj_Z(ell) * dZ_dvp
             dR_drho(iw, ik, ell) = adj_Z(ell) * dZ_drho
+            dR_dh(iw, ik, ell)   = adj_h(ell)
           end do
 
         end do
       end do
       !$OMP END DO
 
-      deallocate(kz, Z, Rstep, phase, adj_kz, adj_Z)
+      deallocate(kz, Z, Rstep, phase, adj_kz, adj_Z, adj_h)
     end block
     !$OMP END PARALLEL
 
