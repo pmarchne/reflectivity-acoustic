@@ -81,6 +81,32 @@ class FWIPosterior:
             scale /= self.scale
 
         return -scale * grad
+    
+    def log_and_grad(self, model):
+        """Calculates gradient log-likelihood via adjoint"""
+        lay = self.param.build_layers(model)
+        residual = self._get_residual(lay)
+        n = residual.size
+        ss = np.sum((residual / self.std_noise) ** 2)
+        const = n * np.log(2.0 * np.pi * self.std_noise**2)
+        log = -0.5 * self.beta * (ss + const)
+    
+        grad = np.zeros(len(model))
+        
+        g_vp, _, g_h = self.sim.gradient(residual=residual, layers=lay)
+        
+        if self.param.invert_h == True:
+            grad[0:self.param.n_vp] = g_vp[1:]
+            grad[self.param.n_vp:] = g_h[1:-1]
+        else :
+            grad = g_vp[1:]
+
+        # Apply chain rule
+        scale = self.beta / (self.std_noise**2)
+        if self.scale > 0:
+            scale /= self.scale
+        grad *= -scale
+        return log, grad
 
     def log_prior(self, model):
         """Calculates ln p(m) for a Gaussian prior."""
@@ -108,8 +134,25 @@ class FWIPosterior:
 
     def grad_log_prior(self, model):
         """Gradient of the Gaussian log-prior."""
-        grad_vp = -self._inv_cov @ (model - self.mu)
-        return grad_vp
+        grad = -self._inv_cov @ (model - self.mu)
+        v_min, v_max = self.param.vp_bounds
+        vp_models = model[0:self.param.n_vp]
+    
+        # Derivative of -0.5 * (m - v_min)**2 is -(m - v_min)
+        v_under_grad = np.where(vp_models < v_min, -(vp_models - v_min), 0.0)
+        v_over_grad = np.where(vp_models > v_max, -(vp_models - v_max), 0.0)
+    
+        grad[0:self.param.n_vp] += (v_under_grad + v_over_grad)
+        if self.param.invert_h:
+            h_min, h_max = self.param.h_bounds
+            h_models = model[self.param.n_vp:-1]
+            
+            h_under_grad = np.where(h_models < h_min, -(h_models - h_min), 0.0)
+            h_over_grad = np.where(h_models > h_max, -(h_models - h_max), 0.0)
+            
+            grad[self.param.n_vp:-1] += (h_under_grad + h_over_grad)
+
+        return grad
 
     def log_posterior(self, model):
         """Combined log-target."""
@@ -121,6 +164,13 @@ class FWIPosterior:
     def grad_log_posterior(self, model):
         """Combined gradient"""
         return self.grad_log_prior(model) + self.grad_log_likelihood(model)
+
+    def log_and_grad_post(self, model):
+        """Combined gradient"""
+        ll, grad_ll = self.log_and_grad(model)
+        ll += self.log_prior(model)
+        grad_ll += self.grad_log_prior(model)
+        return ll, grad_ll
 
     def __call__(self, model):
         return self.log_posterior(model)

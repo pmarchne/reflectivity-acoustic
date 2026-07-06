@@ -17,7 +17,8 @@ def prepare_synthetic_model(seed):
         z_src=20.0,
         x_src=50.0,
         nq_prop=256,
-        nq_evan=128,
+        nq_evan=256,
+        kx_max_factor=6.,
         f0=5.0,
         total_time=1.5,
         delay=0.2,
@@ -28,21 +29,28 @@ def prepare_synthetic_model(seed):
         ind_traces=[],
     )
 
-    vp_ref = np.array([1500.0, 1800.0, 3500.0])
-    h_ref = np.array([100.0, 150., 50.])
-    rho = np.array([2000.0, 2000.0, 2000.0])
+    vp_ref = np.array([1500.0, 1800.0, 2500.0, 3200.])
+    h_ref = np.array([100.0, 150., 50., 200.])
+    rho = np.array([2000.0, 2000.0, 2000.0, 2000.])
 
     layers = create_layers(h_ref, vp_ref, rho)
     sim = Simulation(config)
 
     # 2. Generate Synthetic "Observed" Data
     d_clean = sim.forward(layers)
-    d_obs, std_noise = add_noise_snr(d_clean.squeeze(), snr_db=20, seed=seed)
+    d_obs, std_noise = add_noise_snr(d_clean.squeeze(), snr_db=10, seed=seed)
     print(f"Estimated Noise Std: {std_noise:.4f}")
+    #plot_seismogram(d_obs.T, sim.acq.xr, sim.param.time, vmin=-0.1, vmax=0.1, ncolors=256, figsize=(5,5))
 
+    #vp = np.array([1500.0, 2000.0, 2700.0, 3700.0])
+    #h = np.array([100.0, 120., 80., 200.])
+    #lays = create_layers(h, vp, rho)
+    #d_tmp = sim.forward(lays)
+    #plot_seismogram(d_tmp.T, sim.acq.xr, sim.param.time, vmin=-0.1, vmax=0.1, ncolors=256, figsize=(5,5))
+    
     # Prior Parameters
-    mu_prior = np.array([2500.0, 2500.0, 200.0])
-    cov_prior = np.diag([500**2, 500**2, 100**2])
+    mu_prior = np.array([2500.0, 2500.0, 2500., 100.0, 100.0]) # 150, 150
+    cov_prior = np.diag([500**2, 500**2, 500**2, 50**2, 50**2])
 
     # Calculate effective samples
     factor = 1. # model mismatch inflation factor
@@ -57,7 +65,7 @@ def prepare_synthetic_model(seed):
         invert_h=True,
         startv=1,
         starth=1,
-        prior_mode='gaussian',
+        prior_mode='gaussian', # prior_mode='uniform'
         mu=mu_prior,
         cov=cov_prior
     )

@@ -229,6 +229,7 @@ def plot_seismogram(
     seismogram,
     xrecvs,
     time,
+    x_off=None,
     vmin=-0.06,
     vmax=0.06,
     cmap="seismic",
@@ -238,16 +239,16 @@ def plot_seismogram(
     """Plot seismogram as image: receivers on x-axis, time on y-axis."""
 
     seismogram = np.asarray(seismogram)
-    if seismogram.shape[0] == len(xrecvs):  # transpose if needed
+    if seismogram.shape[0] == len(xrecvs):
         seismogram = seismogram.T
 
-    # Discrete colormap
     colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, ncolors))
     cmap_discrete = ListedColormap(colors)
 
     extent = [np.min(xrecvs), np.max(xrecvs), time[-1], time[0]]
 
     fig, ax = plt.subplots(figsize=figsize)
+
     im = ax.imshow(
         seismogram,
         aspect="auto",
@@ -258,12 +259,21 @@ def plot_seismogram(
         vmax=vmax,
     )
 
-    fig.colorbar(im, ax=ax, label="Amplitude")
-    ax.set_xlabel("Receiver position [m]")
+    # Add vertical dashed lines
+    if x_off is not None:
+        for x in x_off:
+            ax.axvline(
+                x=x,
+                color="k",
+                linestyle="--",
+                linewidth=1.8,
+                alpha=0.5,
+            )
+
+    fig.colorbar(im, ax=ax)
+    ax.set_xlabel("Offset [m]")
     ax.set_ylabel("Time [s]")
-    ax.set_title("Seismogram")
     plt.tight_layout()
-    plt.show()
 
 
 def plot_wiggle_traces(

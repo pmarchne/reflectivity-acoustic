@@ -13,7 +13,7 @@ class ModelParameterization:
         self.prior_mode = prior_mode
         # Bounds
         self.vp_bounds = (1000.0, 6000.0)
-        self.h_bounds = (10.0, 2000.0)
+        self.h_bounds = (10.0, 600.0)
 
         if (prior_mode == 'gaussian') and (mu is None or cov is None):
             raise ValueError('mean and covariance not specified !')
@@ -154,35 +154,3 @@ def diagnostic_checks(bayes, prior_transform, m_ref=None):
         print("    > Range check: PASS")
 
     print("=" * 50 + "\n")
-
-
-
-
-    '''def prior_transform(self, cube):
-
-        cube = np.asarray(cube)
-        params = np.empty_like(cube)
-
-        i = 0
-
-        if self.invert_vp:
-
-            params[i:i+self.n_vp] = (
-                cube[i:i+self.n_vp]
-                * (self.vp_max - self.vp_min)
-                + self.vp_min
-            )
-
-            i += self.n_vp
-
-        if self.invert_h:
-
-            params[i:i+self.n_h] = (
-                cube[i:i+self.n_h]
-                * (self.h_max - self.h_min)
-                + self.h_min
-            )
-
-            i += self.n_h
-
-        return params'''

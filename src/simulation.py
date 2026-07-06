@@ -176,7 +176,7 @@ def _gradient(residual, layers, source_freq, config, param, cache):
         zr=config.z_rec,
         zs=config.z_src,
     )
-
+    
     grad_vp = _sum_gradient(adj_R_prop_unique, dR_dvp_prop, adj_R_evan, dR_dvp_evan)
     grad_rho = _sum_gradient(adj_R_prop_unique, dR_drho_prop, adj_R_evan, dR_drho_evan)
     grad_h = _sum_gradient(adj_R_prop_unique, dR_dh_prop, adj_R_evan, dR_dh_evan)
