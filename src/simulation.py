@@ -45,10 +45,10 @@ class Simulation:
     Forward-only:
         sim = Simulation(config)
         d_cal = sim.forward(layers)
-    Forward + gradient (FWI loop)::
+    Forward + gradient (FWI loop):
         sim = Simulation(config)
         d_cal = sim.forward(layers)
-        grad_vp, _     = sim.gradient(residual[0], layers, sim.cache)
+        grad_vp, _, _  = sim.gradient(residual[0], layers, sim.cache)
     """
 
     def __init__(self, config: Config):
@@ -77,7 +77,7 @@ class Simulation:
             layers, self.config, self.param, self.acq, self._source_freq, self._cache, timing
         )
 
-    def gradient(self, residual, layers) -> tuple[np.ndarray, np.ndarray]:
+    def gradient(self, residual, layers) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute parameter gradients via the adjoint state method.
 
         Parameters
@@ -94,6 +94,8 @@ class Simulation:
             Gradient of the misfit w.r.t. P-wave velocity.
         grad_rho : ndarray, shape (n_layers,)
             Gradient of the misfit w.r.t. density.
+        grad_h : ndarray, shape (n_layers,)
+            Gradient of the misfit w.r.t. layer width.
         """
         return _gradient(
             residual, layers, self._source_freq, self.config, self.param, self._cache
@@ -102,7 +104,7 @@ class Simulation:
 
 def _forward(
     layers, config, param, acq, source_freq, cache, timing
-) -> tuple[np.ndarray, dict]:
+) -> np.ndarray:
     vp_top = layers[0][1]
 
     with timer("Sommerfeld quadrature", timing):
@@ -181,7 +183,8 @@ def _gradient(residual, layers, source_freq, config, param, cache):
     grad_rho = _sum_gradient(adj_R_prop_unique, dR_drho_prop, adj_R_evan, dR_drho_evan)
     grad_h = _sum_gradient(adj_R_prop_unique, dR_dh_prop, adj_R_evan, dR_dh_evan)
 
-    grad_vp[0] = 0.0  # top layer held fixed
+    # top layer held fixed
+    grad_vp[0] = 0.0 
     grad_rho[0] = 0.0
     grad_h[0] = 0.0
     return grad_vp, grad_rho, grad_h

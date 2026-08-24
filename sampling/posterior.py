@@ -1,14 +1,16 @@
 import numpy as np
-from src.layers import update_layer_slice
 from scipy.linalg import cho_factor, cho_solve
+import logging
 
+# Configure logger at module level
+logger = logging.getLogger("FWIPosterior")
+logger.setLevel(logging.INFO)
 
 class FWIPosterior:
     """
     Evaluates the Bayesian Log-Posterior and its gradient for FWI.
     Ensures correct scaling between Prior and Likelihood.
     """
-
     def __init__(
         self, dobs, parametrization, sim, prior_mu, prior_cov, std_noise=1.0, beta=1.0, scale_factor=0.
     ):
@@ -17,17 +19,17 @@ class FWIPosterior:
         self.beta = float(beta)
         self.scale = scale_factor
         self.param = parametrization
-
         # Pre-process observed data
         self.dobs = np.asarray(dobs, dtype=float).squeeze()
-
         # Prior setup
         self.mu = np.asarray(prior_mu, dtype=float).ravel()
         self.cov = prior_cov
-        # Using Cholesky for the inverse and log-det is more stable
+        self.sigma = np.sqrt(np.diag(prior_cov))
         c, low = cho_factor(prior_cov)
         self._inv_cov = cho_solve((c, low), np.eye(self.mu.size))
         self._prior_logdet = 2 * np.sum(np.log(np.diag(c)))
+        self.v_min, self.v_max = self.param.vp_bounds
+        self.range = self.v_max - self.v_min
 
     def _get_residual(self, layer):
         """
@@ -49,7 +51,7 @@ class FWIPosterior:
         ss = np.sum((residual / self.std_noise) ** 2)
         ll = 0.5 * ss
         return ll
-    
+
     def log_likelihood(self, model):
         """Calculates tempered log-likelihood: beta * ln p(d|m)"""
         lay = self.param.build_layers(model)
@@ -61,12 +63,26 @@ class FWIPosterior:
         ll = -0.5 * (ss + const)
         return self.beta * ll
 
+    def log_prior(self, model):
+        """Calculates ln p(m) for a Gaussian prior."""
+        if np.any(model < self.v_min) or np.any(model > self.v_max):
+            return -np.inf
+        diff = model - self.mu
+        gaussian_lp = -0.5 * (
+            diff @ self._inv_cov @ diff + self._prior_logdet + self.mu.size * np.log(2.0 * np.pi)
+        )
+        return gaussian_lp
+
+    def grad_log_prior(self, model):
+        """Gradient of Gaussian log-prior + boundary penalty."""
+        grad_gaussian = -self._inv_cov @ (model - self.mu)
+        return grad_gaussian
+
     def grad_log_likelihood(self, model):
         """Calculates gradient log-likelihood via adjoint"""
         lay = self.param.build_layers(model)
         residual = self._get_residual(lay)
         grad = np.zeros(len(model))
-        
         g_vp, _, g_h = self.sim.gradient(residual=residual, layers=lay)
         
         if self.param.invert_h == True:
@@ -74,7 +90,6 @@ class FWIPosterior:
             grad[self.param.n_vp:] = g_h[1:-1]
         else :
             grad = g_vp[1:]
-
         # Apply chain rule
         scale = self.beta / (self.std_noise**2)
         if self.scale > 0:
@@ -92,10 +107,9 @@ class FWIPosterior:
         log = -0.5 * self.beta * (ss + const)
     
         grad = np.zeros(len(model))
-        
         g_vp, _, g_h = self.sim.gradient(residual=residual, layers=lay)
         
-        if self.param.invert_h == True:
+        if self.param.invert_h:
             grad[0:self.param.n_vp] = g_vp[1:]
             grad[self.param.n_vp:] = g_h[1:-1]
         else :
@@ -108,58 +122,9 @@ class FWIPosterior:
         grad *= -scale
         return log, grad
 
-    def log_prior(self, model):
-        """Calculates ln p(m) for a Gaussian prior."""
-        diff = model - self.mu
-        log_prior = -0.5 * (
-            diff @ self._inv_cov @ diff + self._prior_logdet + self.mu.size * np.log(2.0 * np.pi)
-        )
-        # Add 'Soft Boundary' for gradient-based methods
-        v_min, v_max = self.param.vp_bounds
-        h_min, h_max = self.param.h_bounds
-        for m in model[0:self.param.n_vp]:
-            if m < v_min:
-                log_prior -= 0.5 * (m - v_min)**2  # Sharp quadratic penalty
-            elif m > v_max:
-                log_prior -= 0.5 * (m - v_max)**2
-        
-        if self.param.invert_h == True:
-            for m in model[self.param.n_vp:-1]:
-                if m < h_min:
-                    log_prior -= 0.5 * (m - h_min)**2
-                elif m > h_max:
-                    log_prior -= 0.5 * (m - h_max)**2
-
-        return log_prior
-
-    def grad_log_prior(self, model):
-        """Gradient of the Gaussian log-prior."""
-        grad = -self._inv_cov @ (model - self.mu)
-        v_min, v_max = self.param.vp_bounds
-        vp_models = model[0:self.param.n_vp]
-    
-        # Derivative of -0.5 * (m - v_min)**2 is -(m - v_min)
-        v_under_grad = np.where(vp_models < v_min, -(vp_models - v_min), 0.0)
-        v_over_grad = np.where(vp_models > v_max, -(vp_models - v_max), 0.0)
-    
-        grad[0:self.param.n_vp] += (v_under_grad + v_over_grad)
-        if self.param.invert_h:
-            h_min, h_max = self.param.h_bounds
-            h_models = model[self.param.n_vp:-1]
-            
-            h_under_grad = np.where(h_models < h_min, -(h_models - h_min), 0.0)
-            h_over_grad = np.where(h_models > h_max, -(h_models - h_max), 0.0)
-            
-            grad[self.param.n_vp:-1] += (h_under_grad + h_over_grad)
-
-        return grad
-
     def log_posterior(self, model):
         """Combined log-target."""
-        lp = self.log_prior(model)
-        if not np.isfinite(lp):
-            return -np.inf
-        return lp + self.log_likelihood(model)
+        return self.log_prior(model) + self.log_likelihood(model)
 
     def grad_log_posterior(self, model):
         """Combined gradient"""
@@ -168,9 +133,9 @@ class FWIPosterior:
     def log_and_grad_post(self, model):
         """Combined gradient"""
         ll, grad_ll = self.log_and_grad(model)
-        ll += self.log_prior(model)
-        grad_ll += self.grad_log_prior(model)
-        return ll, grad_ll
+        lp = self.log_prior(model)
+        grad_lp = self.grad_log_prior(model)
+        return ll + lp, grad_ll + grad_lp
 
     def __call__(self, model):
         return self.log_posterior(model)

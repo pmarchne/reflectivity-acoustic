@@ -3,6 +3,7 @@ import numpy as np
 from matplotlib.colors import Normalize, ListedColormap, hsv_to_rgb
 from src.layers import to_arrays
 
+''' A bunch of functions for creating figures '''
 
 def set_plot_style():
     plt.rcParams.update(
@@ -76,11 +77,6 @@ def plot_reflectivity_complex_plane(R_mesh, theta_re, theta_im, title="Reflectio
     H = (phase + np.pi) / (2 * np.pi)
     # Saturation: Fixed at 1 for vibrant colors
     S = np.ones_like(H)
-    
-    # Value: Magnitude mapping
-    # Zeros (mag=0) -> Black (V=0)
-    # Poles (mag->inf) -> White (V=1)
-    # The exponent 0.5 helps compress the dynamic range so poles don't wash out the whole plot
     V = 1 - 1 / (1 + magnitude**0.5)
 
     # 3. Convert to RGB
@@ -222,7 +218,6 @@ def plot_layered_config(
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, label=get_param_label(param))
     plt.tight_layout()
-    # plt.show()
 
 
 def plot_seismogram(
@@ -318,3 +313,85 @@ def create_plot(X, Y, Z, vp_ref1, vp_ref2, vmin=1000.0, vmax=6000.0, title=r"nor
     #plt.title(title)
     plt.tight_layout()
     # plt.show()
+
+
+def plot_post_velocity(layers, post_mean, post_std_mean, post_map):
+    z_plot = []
+    param_plot = []
+    prior_plot = []
+    post_plot = []
+    m_in = np.array([0., 3000.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0])
+    std = 1000.
+
+    #z_int = np.array([0.0, 100.0, 200.0, 275.0, 375.0, 400.0, 500.0, 550.0, 700.0])
+    #vp    = np.array([1505.0, 2700.0, 3200.0, 1900.0, 4200.0, 3800.0, 2200.0, 4500.0])
+    #rho = np.full_like(vp, 2000.0)
+    #layers = create_layers_from_interfaces(z_int, vp, rho)
+    
+    #post_mean = np.array([0., 2702.4019070178424, 3112.064015550052, 2077.507277017946, 3083.3118095056675, 3705.1231211286636, 2391.3892823343713, 3491.836473134705])
+    #post_std_mean = np.array([0., 45.01521047283904, 175.30221476342064, 176.01326592858354, 750.3434919297522, 326.41464119327804, 610.4518581244358, 821.9363398943274])
+    #post_map = np.array([0., 2696.8198354246188, 3074.4423873792193, 1980.826105977049, 3202.2884114407298, 3700.4895477382443, 2397.930062650532, 4124.598347538598])
+
+    for i in range(len(layers)):
+        z_plot.extend([z_int[i], z_int[i + 1]])
+        param_plot.extend([vp[i], vp[i]])
+        prior_plot.extend([m_in[i], m_in[i]])
+        post_plot.extend([post_mean[i], post_mean[i]])
+
+    plt.figure(figsize=(4, 6))
+
+    # Prior uncertainty
+    for i in range(len(layers)):
+        plt.fill_betweenx(
+            [z_int[i], z_int[i+1]],
+            m_in[i] - 1.*std,
+            m_in[i] + 1.*std,
+            color="gray",
+            alpha=0.25,
+            linewidth=0,
+        )
+    # prior mean
+    for i in range(len(layers)):
+        plt.plot([m_in[i], m_in[i]],
+                [z_int[i], z_int[i+1]],
+                color="grey",
+                linewidth=1.5,
+                linestyle='--',
+                label="prior mean" if i == 0 else "")
+
+
+    # Post std
+    for i in range(len(layers)):
+        plt.fill_betweenx(
+            [z_int[i], z_int[i+1]],
+            post_mean[i] - post_std_mean[i],
+            post_mean[i] + post_std_mean[i],
+            color="blue",
+            alpha=0.25,
+            linewidth=0,
+        )
+    # post mean
+    for i in range(len(layers)):
+        plt.plot([post_mean[i], post_mean[i]],
+                [z_int[i], z_int[i+1]],
+                color="b",
+                linewidth=1.8,
+                linestyle='-.',
+                label="post mean" if i == 0 else "")
+
+    # True model
+    plt.plot(param_plot, z_plot, color="red",
+            linewidth=2., label="reference")
+
+    plt.ylabel("Depth [m]")
+    plt.xlabel(r"$v_P$ [m/s]")
+    plt.gca().invert_yaxis()
+    plt.grid(alpha=0.4)
+    #plt.xticks([2000, 3000, 4000, 5000, 6000], fontsize=14)
+    plt.xlim(1000, 6000)
+    plt.ylim(700, 0)
+
+    plt.legend(loc='upper right', fontsize=13)
+    plt.tight_layout()
+    #plt.show()
+    #plt.savefig(path_save+'ref_profile.pdf')

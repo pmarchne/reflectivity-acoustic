@@ -63,11 +63,11 @@ def prepare_model_marine(seed, debug=False):
     # Prior Parameters
     #mu_prior = np.array([3000.0, 3000.0, 3000.0, 3000.0, 1000.0, 1000.0, 1000.0])
     #cov_prior = np.diag([800**2, 800**2, 800**2, 800**2, 400**2, 400**2, 400**2])
-    mu_prior = np.array([2500.0, 2500.0, 2500.0, 2500.0, 1000.0, 1000.0, 1000.0])
-    cov_prior = np.diag([800**2, 800**2, 800**2, 800**2, 800**2, 800**2, 800**2])
+    mu_prior = np.array([2500.0, 2500.0, 2500.0, 2500.0, 1500.0, 500.0, 500.0])
+    cov_prior = np.diag([800**2, 800**2, 800**2, 800**2, 300**2, 300**2, 300**2])
 
     # Calculate effective samples
-    factor = 0.2 # 0.5 # model mismatch inflation factor
+    factor = 0.15 # model mismatch inflation factor (e.g. 0.2, 0.5)
     beta = factor*config.total_time * config.f0 / sim.param.nt
     print(f"Tempering factor beta: {beta:.4f}")
 
