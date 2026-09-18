@@ -269,6 +269,7 @@ def plot_seismogram(
     ax.set_xlabel("Offset [m]")
     ax.set_ylabel("Time [s]")
     plt.tight_layout()
+    plt.show()
 
 
 def plot_wiggle_traces(
@@ -323,8 +324,8 @@ def plot_post_velocity(layers, post_mean, post_std_mean, post_map):
     m_in = np.array([0., 3000.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0, 3000.0])
     std = 1000.
 
-    #z_int = np.array([0.0, 100.0, 200.0, 275.0, 375.0, 400.0, 500.0, 550.0, 700.0])
-    #vp    = np.array([1505.0, 2700.0, 3200.0, 1900.0, 4200.0, 3800.0, 2200.0, 4500.0])
+    z_int = np.array([0.0, 100.0, 200.0, 275.0, 375.0, 400.0, 500.0, 550.0, 700.0])
+    vp    = np.array([1505.0, 2700.0, 3200.0, 1900.0, 4200.0, 3800.0, 2200.0, 4500.0])
     #rho = np.full_like(vp, 2000.0)
     #layers = create_layers_from_interfaces(z_int, vp, rho)
     

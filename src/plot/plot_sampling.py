@@ -12,8 +12,11 @@ from src.plot.diagnostics import run_diagnostics, get_swd
 
 ''' A bunch of functions for creating figures and generate statistics from the outputs of sampling methods '''
 
-def setup_reference():
-    with open('/home/marchnep/Results/beta1_fd/results_ultranest.pkl', 'rb') as file:
+def setup_reference(results_file):
+    ''' loads reference result from Ultranest 
+        e.g 'results_ultranest.pkl'
+    '''
+    with open(results_file, 'rb') as file:
         results = pickle.load(file)
         print("results loaded !")
     samples = results['samples']
@@ -27,7 +30,7 @@ def setup_reference():
     return results
 
 
-def corner_pdf(res, vp_true, save_fig=False):
+def corner_pdf(res, vp_true, vp_map, save_fig=False):
     names = [f'$v_{i+1}$' for i in range(len(vp_true))]
     res['paramnames'] = names
 
@@ -47,6 +50,7 @@ def corner_pdf(res, vp_true, save_fig=False):
             "color": "black",       # no fill
             "linewidth": 1.2,
         },
+        #quantiles=[0., 0., 0.],
         figsize=(9,9),
     )
     ndim = len(names)
@@ -57,19 +61,25 @@ def corner_pdf(res, vp_true, save_fig=False):
             xdata = line.get_xdata()
             # Quantile lines are vertical
             if len(xdata) == 2 and xdata[0] == xdata[1]:
-                line.set_color('purple')
-                line.set_linewidth(1.2)
+                line.set_color('black')
+                line.set_linewidth(0.7)
                 line.set_linestyle("--")
             #ax.set_xlim(1000., 6000.)
 
         ax.axvline(vp_true[i], color="r", linestyle="-", alpha=0.7)
+        ax.axvline(vp_map[i], color="m", linestyle="-.", alpha=0.7)
     # Loop over the histograms
     for yi in range(ndim):
         for xi in range(yi):
             ax = axes[yi, xi]
+
+            ax.axvline(vp_map[xi], color="m", linestyle="-.", lw=1.8, alpha=0.7)
+            ax.axhline(vp_map[yi], color="m", linestyle="-.", lw=1.8, alpha=0.7)
+            ax.plot(vp_map[xi], vp_map[yi], "om", alpha=0.7, markeredgecolor="k", ms=12, zorder=4)
+
             ax.axvline(vp_true[xi], color="r", linestyle="-", lw=1.8, alpha=0.7)
             ax.axhline(vp_true[yi], color="r", linestyle="-", lw=1.8, alpha=0.7)
-            ax.plot(vp_true[xi], vp_true[yi], "or", alpha=0.7, ms=10, zorder=4)
+            ax.plot(vp_true[xi], vp_true[yi], "*r", alpha=0.7, markeredgecolor="k", ms=16, zorder=4)
             #ax.set_xlim(1000., 6000.)
             #ax.set_ylim(1000., 6000.)
 
@@ -97,12 +107,12 @@ def corner_pdf(res, vp_true, save_fig=False):
     from matplotlib.patches import Patch
 
     legend_handles = [
-        Line2D([0], [0], color="purple", lw=1.5, ls="--", label="hist. quantiles"),
         Line2D([0], [0], color="black", lw=1.5, ls="-.", label="39\\%"),
         Line2D([0], [0], color="black", lw=1.5, ls=":", label="68\\%"),
         Line2D([0], [0], color="black", lw=1.5, ls="--", label="95\\%"),
         Line2D([0], [0], color="black", lw=1.5, ls="-", label="99\\%"),
-        Line2D([0], [0], color="r", lw=1.5, ls="-", label="Reference"),
+        Line2D([0], [0], color="r", lw=1.5, ls="-", label="True"),
+        Line2D([0], [0], color="m", lw=1.5, ls="-.", label="MAP"),
     ]
 
     figure.legend(
@@ -111,9 +121,9 @@ def corner_pdf(res, vp_true, save_fig=False):
         frameon=False,
         fontsize=28,
     )
-    path = ''
+    path = '/home/marchnep/Documents/Gitlab_repos/2026_MARCHNER_UQFWI/Fig/fwi_7vp/'
     if save_fig:
-        plt.savefig(path + 'corner_plot.pdf')
+        plt.savefig(path + 'corner_plot2.pdf')
         plt.close()
     else:
         plt.show()
@@ -121,7 +131,7 @@ def corner_pdf(res, vp_true, save_fig=False):
 
 def marginals1D_mog(samples_ref, means, Rs, weights, it_num=-1, save_fig=False, seed=0, color='red', lbl='tmp'):
     ndim = samples_ref.shape[1]
-    fig, axes = plt.subplots(1, ndim, figsize=(4 * ndim + 6, 4))
+    fig, axes = plt.subplots(1, ndim, figsize=(4 * ndim + 6, 5))
     nkde = 1000
     vmin, vmax = 1000., 6000.
     x = np.linspace(vmin, vmax, nkde)
@@ -136,6 +146,8 @@ def marginals1D_mog(samples_ref, means, Rs, weights, it_num=-1, save_fig=False, 
         counts, bins = np.histogram(samples_ref[:, i], bins=100, density=True)
         max_count = counts.max()
         # Plot Reference
+        lbl_ref = 'Reference' if i == 0 else ""
+        lbl_mixgvi = lbl if i == 1 else ""
         nbins = 60
         axes[i].hist(
             samples_ref[:, i],
@@ -145,9 +157,9 @@ def marginals1D_mog(samples_ref, means, Rs, weights, it_num=-1, save_fig=False, 
             edgecolor="black",
             facecolor=(0, 0, 0, 0.2),  # RGBA black with transparency
             linewidth=1.2,
-            label="Reference",
+            label=lbl_ref,
         )
-        axes[i].set_title(r"$v_{" + str(i+1) + "}$", fontsize=36)
+        axes[i].set_title(r"$v_{" + str(i+1) + "}$", fontsize=42)
         axes[i].set_ylim(0, 1.5*max_count)
         # Compute Analytical Mixture of Gaussians 1D PDF
         mog_pdf = np.zeros_like(x)
@@ -158,20 +170,19 @@ def marginals1D_mog(samples_ref, means, Rs, weights, it_num=-1, save_fig=False, 
             sigma_k = np.sqrt(cov_matrix[i, i])
             mog_pdf += it_weights[k] * norm.pdf(x, mu_k, sigma_k)
             
-        axes[i].plot(x, mog_pdf, color=color, linestyle='--', lw=3, label=lbl)
+        axes[i].plot(x, mog_pdf, color=color, linestyle='--', lw=3, label=lbl_mixgvi)
         axes[i].set_yticks([])          
         axes[i].set_yticklabels([]) 
-        axes[i].tick_params(axis='x', labelsize=26)
+        axes[i].tick_params(axis='x', labelsize=34)
         axes[i].set_xlim(vmin, vmax)
-
-    axes[2].legend(fontsize=24, frameon=False)
+        axes[i].legend(fontsize=32, frameon=False)
     axes[0].set_xlim(2200, 3200)
     axes[1].set_xlim(2000, 4000)
     axes[2].set_xlim(1500, 3500)
     plt.tight_layout()
     path = '/home/marchnep/Documents/Gitlab_repos/2026_MARCHNER_UQFWI/Fig/fwi_7vp/'
     if save_fig:
-        plt.savefig(path + f'mixGVI_marginals_it{it_num}_N{n_components}_seed{seed}.pdf')
+        plt.savefig(path + f'mixGVI2_marginals_it{it_num}_N{n_components}_seed{seed}.pdf')
         plt.close()
     else:
         plt.show()
@@ -181,11 +192,14 @@ def marginals1D_mog(samples_ref, means, Rs, weights, it_num=-1, save_fig=False, 
 def marginals1D_particles(samples_ref, samples_part, it_num=-1, save_fig=False, seed=0):
     ndim = samples_ref.shape[1]
     s_part = samples_part[it_num]
-    fig, axes = plt.subplots(1, ndim, figsize=(4*ndim+2, 4))
+    fig, axes = plt.subplots(1, ndim, figsize=(4*ndim+2, 5))
     nkde = 500
     vmin, vmax = 1000., 6000.
     for i in range(ndim):
         # kde = gaussian_kde(samples_ref[:, i])
+        lbl_ref = 'Reference' if i == 0 else ""
+        lbl_svgd = 'SVGD' if i == 1 else ""
+        
         x = np.linspace(vmin, vmax, nkde)
         kde_part = gaussian_kde(s_part[:, i])
         nbins = 60
@@ -199,25 +213,26 @@ def marginals1D_particles(samples_ref, samples_part, it_num=-1, save_fig=False, 
             edgecolor="black",
             facecolor=(0, 0, 0, 0.2),  # RGBA black with transparency
             linewidth=1.2,
-            label="Reference",
+            label=lbl_ref,
         )
         axes[i].set_ylim(0, 1.5*max_count)
         #axes[i].hist(samples_ref[:, i], bins=nbins, density=True, alpha=0.7, label='Reference', color="black", edgecolor="black", linewidth=1.2)
-        axes[i].set_title(r"$v_{" + str(i+1) + "}$", fontsize=36)
+        axes[i].set_title(r"$v_{" + str(i+1) + "}$", fontsize=42)
         #axes[i].set_ylim(0, 1.5 * nbins)
-        axes[i].plot(x, kde_part(x), lw=3., label='SVGD', color='green', linestyle='--')
+        axes[i].plot(x, kde_part(x), lw=3., label=lbl_svgd, color='green', linestyle='--')
         axes[i].set_yticks([]) 
         axes[i].set_yticklabels([]) 
-        axes[i].tick_params(axis='x', labelsize=26)
+        axes[i].tick_params(axis='x', labelsize=34)
         axes[i].set_xlim(vmin, vmax)
-    axes[2].legend(fontsize=24, frameon=False)
+        axes[i].legend(fontsize=32, frameon=False)
+    #axes[2].legend(fontsize=32, frameon=False)
     axes[0].set_xlim(2200, 3200)
     axes[1].set_xlim(2000, 4000)
     axes[2].set_xlim(1500, 3500)
     plt.tight_layout()
     path = '/home/marchnep/Documents/Gitlab_repos/2026_MARCHNER_UQFWI/Fig/fwi_7vp/'
     if save_fig:
-        plt.savefig(path + f'svgd_marginals_it{it_num}_seed{seed}.pdf')
+        plt.savefig(path + f'svgd2_marginals_it{it_num}_seed{seed}.pdf')
         plt.close()
     else:
         plt.show()
@@ -294,8 +309,9 @@ def plot_band(res, save_fig):
         plt.show()
 
 
-def get_MoG(means, Rs, weights, target_it, dim):
+def get_MoG(means, Rs, weights, target_it):
     it_weights = weights[target_it]
+    dim = len(means[target_it][0])
     K = len(it_weights)
     comp_idx = np.random.choice(K, size=100000, p=it_weights)
                     
@@ -309,7 +325,7 @@ def get_MoG(means, Rs, weights, target_it, dim):
 
 def marginals1D_gvi(samples_ref, means, Rs, means2, Rs2, map, hess_inv, it_num=-1, save_fig=False):
     ndim = samples_ref.shape[1]
-    fig, axes = plt.subplots(1, ndim, figsize=(4 * ndim + 6, 4))
+    fig, axes = plt.subplots(1, ndim, figsize=(4 * ndim + 6, 5))#4
     nkde = 1000
     vmin, vmax = 1000., 6000.
     x = np.linspace(vmin, vmax, nkde)
@@ -326,7 +342,7 @@ def marginals1D_gvi(samples_ref, means, Rs, means2, Rs2, map, hess_inv, it_num=-
         lbl_laplace = 'Laplace' if i == 0 else ""
         lbl_gvi1 = '$\mathbf{m}_0 = 2500$' if i == 1 else ""
         lbl_gvi2 = '$\mathbf{m}_0 = 2800$' if i == 2 else ""
-        lbl_ref = 'Reference' if i == 5 else ""
+        lbl_ref = 'Reference' if i == 4 else ""
         # Plot Reference
         nbins = 60
         axes[i].hist(
@@ -339,7 +355,7 @@ def marginals1D_gvi(samples_ref, means, Rs, means2, Rs2, map, hess_inv, it_num=-
             linewidth=1.2,
             label=lbl_ref
         )
-        axes[i].set_title(r"$v_{" + str(i+1) + "}$", fontsize=36)
+        axes[i].set_title(r"$v_{" + str(i+1) + "}$", fontsize=42)
         axes[i].set_ylim(0, 1.5*max_count)
         # Compute Analytical Mixture of Gaussians 1D PDF
         mu = mean1[i]
@@ -357,13 +373,13 @@ def marginals1D_gvi(samples_ref, means, Rs, means2, Rs2, map, hess_inv, it_num=-
         gvi3 = norm.pdf(x, mu3, sigma3)
         
 
-        axes[i].plot(x, gvi3, 'k-.', lw=3, label=lbl_laplace)
+        axes[i].plot(x, gvi3, 'm-.', lw=3, label=lbl_laplace)
         axes[i].plot(x, gvi1, color='blue', linestyle=':', lw=3, label=lbl_gvi1)
         axes[i].plot(x, gvi2, color='teal', linestyle='--', lw=3, label=lbl_gvi2)
-        axes[i].legend(fontsize=24, frameon=False)
+        axes[i].legend(fontsize=32, frameon=False)
         axes[i].set_yticks([])          
         axes[i].set_yticklabels([]) 
-        axes[i].tick_params(axis='x', labelsize=26)
+        axes[i].tick_params(axis='x', labelsize=34)
         axes[i].set_xlim(vmin, vmax)
 
     axes[0].set_xlim(2200, 3200)
@@ -372,7 +388,7 @@ def marginals1D_gvi(samples_ref, means, Rs, means2, Rs2, map, hess_inv, it_num=-
     plt.tight_layout()
     path = '/home/marchnep/Documents/Gitlab_repos/2026_MARCHNER_UQFWI/Fig/fwi_7vp/'
     if save_fig:
-        plt.savefig(path + f'GVI_marginals_it{it_num}.pdf')
+        plt.savefig(path + f'GVI_marginals2_it{it_num}.pdf')
         plt.close()
     else:
         plt.show()
@@ -380,40 +396,38 @@ def marginals1D_gvi(samples_ref, means, Rs, means2, Rs2, map, hess_inv, it_num=-
 
 if __name__ == "__main__":
     vp_true = np.array([2700.0, 3200.0, 1900.0, 4200.0, 3800.0, 2200.0, 4500.0])
-    dim = len(vp_true)
     set_plot_style()
-    res = setup_reference()
-    corner_pdf(res, vp_true, save_fig=False)
-    
-    #rng = np.random.default_rng(42)
+    ultranest_file = '/home/marchnep/Results/beta1_fd/results_ultranest.pkl'
+    res = setup_reference(ultranest_file)
     obs_path = "FD_comparison/data/seis_v3_nofs"
     bayes, param = prepare_fd_model(file_path=obs_path, seed=42, debug=False)
 
-    logZ = 141.86576429722984
+    logZ = res['logz'] # 141.86576429722984
+    vp_map = res['maximum_likelihood']['point']
     ns = 2000
     target_it = 200
     target_it_gvi = 200
-    plot_svgd = False
-    plot_mixgvi = False
+    plot_svgd = True
+    plot_mixgvi = True
     plot_gvi = False
-    plot_reference = True
+    plot_reference = False
     save_fig = False
-    folder = 'results_mog_svgd/'
-    seed = 0
+    folder = 'results_gvi_mixgvi_svgd/'
+    seed = 16
 
     if plot_reference:
-        corner_pdf(res, vp_true, save_fig=save_fig)
+        corner_pdf(res, vp_true, vp_map, save_fig=save_fig)
         # plot_band(res, save_fig=save_fig)    
-
+    
     if plot_gvi:
-        with open('res_gvi_std500_mu2500.pkl', 'rb') as fp:
+        with open(folder+'res_gvi_std500_mu2500.pkl', 'rb') as fp:
             res_gvi1 = pickle.load(fp)
             mean1, Rs1, w1 = res_gvi1[0], res_gvi1[1], res_gvi1[2]
-        with open('res_gvi_std500_mu2800.pkl', 'rb') as fp:
+        with open(folder+'res_gvi_std500_mu2800.pkl', 'rb') as fp:
             res_gvi2 = pickle.load(fp)
             mean2, Rs2, w2 = res_gvi2[0], res_gvi2[1], res_gvi2[2]
 
-        map = np.array([2700.692, 3062.192, 2014.517, 3081.276, 3697.679, 2174.89,  3283.172])
+        map_lap = np.array([2700.692, 3062.192, 2014.517, 3081.276, 3697.679, 2174.89,  3283.172])
         hess_inv_laplace = np.array([
             [ 1846.731, -2671.837,    43.451, -1651.138,  -682.262,     5.521,    26.808],
             [-2671.837, 19537.423, -2770.513, -4958.137,  2033.839, -2074.682,   511.138],
@@ -427,73 +441,37 @@ if __name__ == "__main__":
         # 1. Standard Deviations (square roots of the diagonal elements)
         std_devs = np.sqrt(np.diag(hess_inv_laplace))
         print("Standard Deviations (std):", std_devs)
-        marginals1D_gvi(res['samples'], mean1, Rs1, mean2, Rs2, map, hess_inv_laplace, it_num=target_it_gvi, save_fig=save_fig)
-        gvi1_samples = get_MoG(mean1, Rs1, w1, target_it_gvi, dim)
+        marginals1D_gvi(res['samples'], mean1, Rs1, mean2, Rs2, map_lap, hess_inv_laplace, it_num=target_it_gvi, save_fig=save_fig)
+        gvi1_samples = get_MoG(mean1, Rs1, w1, target_it_gvi)
         _, _ = run_diagnostics(res, gvi1_samples, method_name=f"GVI 1 (it={target_it_gvi})", verbose=True)
 
-        gvi2_samples = get_MoG(mean2, Rs2, w2, target_it_gvi, dim)
+        gvi2_samples = get_MoG(mean2, Rs2, w2, target_it_gvi)
         _, _ = run_diagnostics(res, gvi2_samples, method_name=f"GVI 2 (it={target_it_gvi})", verbose=True)
-        samples_laplace = np.random.multivariate_normal(mean=map, cov=hess_inv_laplace, size=50000)
+        samples_laplace = np.random.multivariate_normal(mean=map_lap, cov=hess_inv_laplace, size=50000)
         _, _ = run_diagnostics(res, samples_laplace, method_name=f"Laplace approx.", verbose=True)
 
     if plot_svgd:
-        with open('res_svgd_unconst_rng'+str(seed)+'.pkl', 'rb') as fp:
+        with open(folder+'res_svgd_unconst_rng'+str(seed)+'.pkl', 'rb') as fp:
             res_load = pickle.load(fp)
             res_svgd, kl_hist = res_load[0], res_load[1]
             print("results loaded !")
         _, _ = run_diagnostics(res, res_svgd[target_it], method_name=f"svgd (it={target_it})", verbose=True)
-        marginals1D_particles(res['samples'], res_svgd, it_num=target_it, save_fig=save_fig, seed=seed)
+        #marginals1D_particles(res['samples'], res_svgd, it_num=target_it, save_fig=save_fig, seed=seed)
     
     if plot_mixgvi:
-        with open('test_unconst_MoG5_rng'+str(seed)+'.pkl', 'rb') as fp:
+        with open(folder+'test_unconst_MoG5_rng'+str(seed)+'.pkl', 'rb') as fp:
             res_mixgvi5 = pickle.load(fp)
             means5, Rs5, weights5, kl5, dt_w5 = res_mixgvi5[0], res_mixgvi5[1], res_mixgvi5[2], res_mixgvi5[3], res_mixgvi5[4]
             print("results 5 mix gvi loaded !")
-        MoG5_samples = get_MoG(means5, Rs5, weights5, target_it, dim)
+        MoG5_samples = get_MoG(means5, Rs5, weights5, target_it)
         _, _ = run_diagnostics(res, MoG5_samples, method_name=f"MoG VI (it={target_it_gvi})", verbose=True)
-        marginals1D_mog(res['samples'], means5, Rs5, weights5, it_num=target_it_gvi, save_fig=save_fig, seed=seed, color='orange', lbl='$K=5$')
+        #marginals1D_mog(res['samples'], means5, Rs5, weights5, it_num=target_it_gvi, save_fig=save_fig, seed=seed, color='darkorange', lbl='$K=5$')
 
-        with open('test_unconst_MoG10_rng'+str(seed)+'.pkl', 'rb') as fp:
+        with open(folder+'test_unconst_MoG10_rng'+str(seed)+'.pkl', 'rb') as fp:
             res_mixgvi = pickle.load(fp)
             means, Rs, weights, kl, dt_w = res_mixgvi[0], res_mixgvi[1], res_mixgvi[2], res_mixgvi[3], res_mixgvi[4]
             print("results 10 mix gvi loaded !")
 
-        MoG10_samples = get_MoG(means, Rs, weights, target_it_gvi, dim)  
+        MoG10_samples = get_MoG(means, Rs, weights, target_it_gvi)  
         _, _ = run_diagnostics(res, MoG10_samples, method_name=f"MoG VI (it={target_it_gvi})", verbose=True)
-        marginals1D_mog(res['samples'], means, Rs, weights, it_num=target_it_gvi, save_fig=save_fig, seed=seed, color='red', lbl='$K=10$')
-
-
-    SWD5, SWD10, SWD_S = [], [], []
-    n_proj = 500
-    # Loop over iterations to track metrics over time
-    for it in range(target_it):
-        # 1. Generate samples for the current iteration 'it'
-        mog5_samples_it = get_MoG(means5, Rs5, weights5, it, dim)    
-        mog10_samples_it = get_MoG(means, Rs, weights, it, dim)
-        # 2. Run diagnostics and unpack both metrics
-        swd_k5 = get_swd(res, mog5_samples_it, n_proj = n_proj)
-        swd_k10 = get_swd(res, mog10_samples_it, n_proj = n_proj)
-        swd_s = get_swd(res, res_svgd[it], n_proj = n_proj)
-        print(it)
-        SWD5.append(swd_k5)
-        SWD10.append(swd_k10)
-        SWD_S.append(swd_s)
-
-    # 4. Plotting the convergence metrics over iterations
-    iterations = range(target_it)
-    plt.figure(figsize=(8, 5))
-    plt.plot(iterations, SWD5, label='$K=5$')
-    plt.plot(iterations, SWD10, label='$K=10$')
-    plt.plot(iterations, SWD_S, label='SVGD')
-    plt.xlabel('Iteration')
-    plt.ylabel('Distance')
-    plt.title('SWD')
-    plt.legend()
-    plt.show()
-
-    #np.savez(
-    #    f"swd_convergence_seed{seed}_fine.npz",
-    #    SWD5=np.array(SWD5),
-    #    SWD10=np.array(SWD10),
-    #    SWD_S=np.array(SWD_S)
-    #)
+        #marginals1D_mog(res['samples'], means, Rs, weights, it_num=target_it_gvi, save_fig=save_fig, seed=seed, color='red', lbl='$K=10$')

@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from src.plot.plot_tools import set_plot_style
+from src.plot.diagnostics import get_swd
 
 set_plot_style()
 path = '' #'/home/marchnep/Documents/Gitlab_repos/2026_MARCHNER_UQFWI/Fig/fwi_7vp/'
@@ -57,6 +58,43 @@ plt.tight_layout()
 plt.savefig(path+'seed16_SWD_progress.pdf')
 #plt.show()
 
+
+def plot_swd_history(it_max, res, mog5_samples_it, mog10_samples_it, res_svgd):
+    SWD5, SWD10, SWD_S = [], [], []
+    n_proj = 500
+    # Loop over iterations to track metrics over time
+    for it in range(it_max):
+        # 1. Generate samples for the current iteration 'it'
+        #mog5_samples_it = get_MoG(means5, Rs5, weights5, it)    
+        #mog10_samples_it = get_MoG(means, Rs, weights, it)
+        # 2. Run diagnostics and unpack both metrics
+        swd_k5 = get_swd(res, mog5_samples_it, n_proj = n_proj)
+        swd_k10 = get_swd(res, mog10_samples_it, n_proj = n_proj)
+        swd_s = get_swd(res, res_svgd[it], n_proj = n_proj)
+        print(it)
+        SWD5.append(swd_k5)
+        SWD10.append(swd_k10)
+        SWD_S.append(swd_s)
+
+    # 4. Plotting the convergence metrics over iterations
+    its = range(it_max)
+    plt.figure(figsize=(8, 5))
+    plt.plot(its, SWD5, label='$K=5$')
+    plt.plot(its, SWD10, label='$K=10$')
+    plt.plot(its, SWD_S, label='SVGD')
+    plt.xlabel('Iteration')
+    plt.ylabel('Distance')
+    plt.title('SWD')
+    plt.legend()
+    plt.show()
+
+
+    #np.savez(
+    #    f"swd_convergence_seed{seed}_fine.npz",
+    #    SWD5=np.array(SWD5),
+    #    SWD10=np.array(SWD10),
+    #    SWD_S=np.array(SWD_S)
+    #)
 
 # generic function to extract all data
 '''

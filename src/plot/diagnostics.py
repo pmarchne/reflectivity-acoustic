@@ -1,6 +1,12 @@
 import numpy as np
-from scipy.stats import wasserstein_distance
+#from scipy.stats import wasserstein_distance
 
+def wasserstein_distance(u, v, n_quantiles=5000):
+    """Computes the 1D 2-Wasserstein distance between two samples u and v."""
+    quants = np.linspace(0, 1, n_quantiles)
+    u_q = np.quantile(u, quants)
+    v_q = np.quantile(v, quants)
+    return np.sqrt(np.mean((u_q - v_q) ** 2))
 
 def rbf_kernel_numpy(X, Y, gamma=1.0):
     """
@@ -103,9 +109,9 @@ def run_diagnostics(results_ultranest, samples_approx, method_name="Approx Metho
         print(f" BASELINE NOISE FLOOR (Ref vs Ref):")
         print(f"  >>> MMD Noise Floor : {baseline_mmd:.4f}")
         print(f"  >>> SWD Noise Floor : {baseline_swd:.4f}")
-        print(f"-------------------------------------------------------")
+        print("-" * 60)
         print(
-            f"{'Param':<6} | {'Ref Mean±Std':<20} | {'diff Mean':<9} | {'diff Std':<8} | {'1D W1':<8}"
+            f"{'Param':<6} | {'Ref Mean±Std':<20} | {'diff Mean':<9} | {'diff Std':<8} | {'1D W2':<8}"
         )
         print("-" * 60)
     
@@ -115,10 +121,10 @@ def run_diagnostics(results_ultranest, samples_approx, method_name="Approx Metho
         
         delta_mean = np.abs(m_ref - m_app)
         delta_std = np.abs(s_ref - s_app)
-        w1_dist = wasserstein_distance(samples_ref[:, i], samples_approx[:, i])
+        w2_dist = wasserstein_distance(samples_ref[:, i], samples_approx[:, i])
 
         if verbose == True:
-            print(f"v_{i+1:<3} | {m_ref:>8.1f} ± {s_ref:<8.1f} | {delta_mean:<9.2f} | {delta_std:<8.2f} | {w1_dist:<8.2f}")
+            print(f"v_{i+1:<3} | {m_ref:>8.1f} ± {s_ref:<8.1f} | {delta_mean:<9.2f} | {delta_std:<8.2f} | {w2_dist:<8.2f}")
 
     if verbose == True:
         print("-" * 60)
