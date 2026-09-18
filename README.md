@@ -4,11 +4,9 @@ This repository implements the **reflectivity method** for computing synthetic s
 
 The reflectivity method is a semi-analytical approach for solving the wave equation in **vertically layered media**. By leveraging the 1D nature of the velocity model, this implementation provides a fast alternative to grid-based (FD, SEM) methods.
 
-> **Status:** Project in progress
-
 ---
 
-## Methodology
+## 1. Methodology
 
 The solver operates in the Fourier frequency-wavenumber ($\omega-k_x$) domain. The three primary steps are:
 
@@ -45,15 +43,27 @@ The reflectivity map $R(k_x, \omega)$ is constructed recursively using interface
 
 ---
 
+## 2. Bayesian uncertainty quantification and sampling
+The folder `sampling` contains benchmarks to perform uncertainty quantification in FWI. More precisely the purpose is to first generate the reference Bayesian posterior pdf, and then assess the accuracy of sampling algorithms. The process is designed as follows:
+
+1. Specify the observations, the model parameters, the forward model and the FWI posterior. For example, see `fd_experiment.py`.
+2. Generate a reference posterior pdf with the Ultranest library, see `ultranest_run.py`. This part is the most heavy computationaly; depending on the FWI benchmark, several millions of forward evaluations are required for Ultranest to complete. A reference benchmark data is provided in the `data` folder, corresponding to the benchmark defined in `fd_experiment.py`.
+3. Assess sampling algorithms, see `benchmarks.py`. This requires the lightweight `sampling_toolbox` library to reproduce the experiments, provided in the Github repository
+https://github.com/pmarchne/sampling_toolbox  
+Currently, the program can run SVGD, Gaussian Variational inference, and Mixture of Gaussian variaitional inference, with several options from the sampling toolbox.
+
+A lighter example, for a 2-parameter toy Bayesian problem, is provided in the notebook `notebooks/sampling_2param.ipynb`.
+
+---
+
 ## Roadmap
-- Extend implementation to **3D physics**.
+- Extend reflectivity method to **3D physics**.
 - Implement **complex contour deformation** for the Sommerfeld integral.
 - Extend to **Elastic** wave propagation.
 - Add $v_x$ and $v_z$ components
 
 ## To do list
 - scale correctly with the density
-- add the adjoint for the layer widths
 - add unit test for Sommerfeld integral
 - add quality factor $Q_p$
 - try to switch to simple precision
@@ -61,6 +71,7 @@ The reflectivity map $R(k_x, \omega)$ is constructed recursively using interface
 ## References
 1. Mallick, S., & Frazer, L. N. (1987). Practical aspects of reflectivity modeling. Geophysics, 52(10), 1355-1364.
 2. Muller, G. (1985). The reflectivity method: a tutorial. Journal of Geophysics, 58(1), 153-174.
+3. Buchner, J., (2021). UltraNest - a robust, general purpose Bayesian inference engine. Journal of Open Source Software, 6(60), 3001.
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
